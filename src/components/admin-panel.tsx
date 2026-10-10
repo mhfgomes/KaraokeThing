@@ -21,7 +21,7 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
   const [busyUploading, setBusyUploading] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const nextId = useRef(1);
-  const pending = useRef<{ item: Item; file: File }[]>([]);
+  const pending = useRef<{ item: Item; file: File; quality: Quality }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [path, setPath] = useState('');
@@ -35,12 +35,13 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
   const patchItem = (id: number, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
   const start = async (files: File[]) => {
-    const fresh: { item: Item; file: File }[] = files.map((file) => {
+    // Quality is fixed per file when it is added, even if the selector changes mid-upload.
+    const fresh: { item: Item; file: File; quality: Quality }[] = files.map((file) => {
       const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
       const item: Item = { id: nextId.current++, name: file.name, size: file.size, state: 'waiting', progress: 0 };
       if (!EXT.includes(ext)) { item.state = 'error'; item.message = 'Unsupported format. Use MP3, WAV, FLAC, M4A, or OGG.'; }
       else if (file.size > MAX) { item.state = 'error'; item.message = 'Larger than the 250 MB limit.'; }
-      return { item, file };
+      return { item, file, quality };
     });
     setItems((xs) => [...xs, ...fresh.map((f) => f.item)]);
     if (running.current) { pending.current.push(...fresh.filter((f) => f.item.state === 'waiting')); return; }
@@ -49,7 +50,7 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
     setBusyUploading(true);
     abort.current = new AbortController();
     while (pending.current.length) {
-      const { item, file } = pending.current.shift()!;
+      const { item, file, quality } = pending.current.shift()!;
       patchItem(item.id, { state: 'uploading' });
       try {
         const r = await uploadOne(file, quality, (f) => patchItem(item.id, { progress: f }), abort.current.signal);
