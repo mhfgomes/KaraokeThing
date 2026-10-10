@@ -84,7 +84,7 @@ Reducing rejection thresholds trades fewer rejected lines for more incorrect tim
 ```sh
 node --import tsx --test src/worker/alignment.test.ts
 KARAOKE_TEST_ALIGNMENT_INFERENCE=1 node --import tsx --test src/worker/alignment.test.ts
-node node_modules/typescript/bin/tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler src/worker/alignment.ts src/worker/alignment.test.ts scripts/install-alignment-model.ts
+pnpm exec tsc --ignoreConfig --noEmit --strict --skipLibCheck --types node --target es2022 --module esnext --moduleResolution bundler src/worker/alignment.ts src/worker/alignment.test.ts scripts/install-alignment-model.ts
 ```
 
 PowerShell: set `$env:KARAOKE_TEST_ALIGNMENT_INFERENCE='1'` before the test command. The native test requires the installed model, FFmpeg, and network access to download a pinned 1.94 MB public-domain speech fixture into a temporary directory. Regular tests are offline and do not require installed weights. Native production alignment never downloads a fixture.

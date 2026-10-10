@@ -61,6 +61,10 @@ Stop the app before copying the entire data folder, including the SQLite databas
 
 ## Verification and current limits
 
+GitHub Actions runs lint, type checking, tests, and a production build on pushes and pull requests. The workflow uses Node.js 24.12.0, the pnpm version pinned in `package.json`, and FFmpeg for the audio-ingestion tests. To run the same checks locally, use `pnpm run ci`.
+
+Type checking uses TypeScript 7.0.2. Next.js and ESLint use the TypeScript 6 compatibility package through the `typescript` alias, following Microsoft's [side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0). Node typings track the supported Node 24 runtime. ESLint 10 passes the checks, although some Next.js lint plugins still declare peer support only through ESLint 9. The workspace includes version-specific release-age exceptions for three explicitly upgraded packages published within pnpm's default one-day window.
+
 ```sh
 pnpm typecheck
 pnpm lint

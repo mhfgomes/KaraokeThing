@@ -56,12 +56,13 @@ async function upload(request: Request) {
   parser.on('field', (name, value) => { if (name === 'quality') quality = qualitySchema.parse(value); });
   parser.on('filesLimit', () => result.errors.push('Upload at most 100 files per batch.'));
   parser.on('file', (_name, file, info) => {
-    const filename = path.join(DATA_DIR, 'temporary', randomUUID() + path.extname(info.filename).toLowerCase());
+    const originalName = info.filename ?? 'unnamed file';
+    const filename = path.join(DATA_DIR, 'temporary', randomUUID() + path.extname(originalName).toLowerCase());
     pending.push((async () => {
       try {
         await pipeline(file, createWriteStream(filename), { signal: request.signal });
-        if (file.truncated) throw new HttpError(413, `${info.filename} exceeds 250 MB.`);
-        const outcome = await ingestFile(filename, path.basename(info.filename), quality);
+        if (file.truncated) throw new HttpError(413, `${originalName} exceeds 250 MB.`);
+        const outcome = await ingestFile(filename, path.basename(originalName), quality);
         if (outcome === 'added') result.added++; else result.duplicates++;
       } catch (error) { result.errors.push(error instanceof Error ? error.message : 'Upload failed.'); }
       finally { await rm(filename, { force: true }); }

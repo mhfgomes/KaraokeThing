@@ -37,6 +37,20 @@ test('setup, hashed password, read-only visitors, and cross-origin rejection', a
   assert.equal((await call('queue', 'POST', { trackId: 'x', singer: 'Guest' }, true, 'https://attacker.example')).status, 403);
   assert.equal((await call('auth', 'POST', { action: 'login', password: 'bad' })).status, 401);
 });
+test('multipart uploads without a filename return an unsupported-file error without crashing', async () => {
+  const boundary = 'karaoke-unnamed-upload';
+  const request = new Request('http://localhost:3000/api/upload', {
+    method: 'POST',
+    headers: { host: 'localhost:3000', origin: 'http://localhost:3000', cookie, 'content-type': `multipart/form-data; boundary=${boundary}` },
+    body: `--${boundary}\r\nContent-Disposition: form-data; name="files"\r\nContent-Type: application/octet-stream\r\n\r\naudio bytes\r\n--${boundary}--\r\n`,
+  });
+  const response = await handleApi(request, ['upload']);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.added, 0);
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0], /Unsupported file: unnamed file/);
+});
 test('queue reorder validates exact membership and conflicts without partial mutation', async () => {
   const first = await seed('First'), second = await seed('Second');
   assert.equal((await call('queue', 'POST', { trackId: first, singer: 'Mario' })).status, 200);

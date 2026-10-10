@@ -61,7 +61,7 @@ test('real CPU model, disk overlap, aligned MP3 outputs, monotonic progress and 
     assert.match(result.model, /scnet/);
     assert.equal(progress.at(-1), 1);
     assert.ok(progress.every((p, i) => p >= 0 && p <= 1 && (i === 0 || p >= progress[i - 1])));
-    const decoded = [];
+    const decoded: Buffer[] = [];
     for (const stem of [result.guide, result.backing]) {
       const output = `${stem}.f32`;
       execFileSync(ffmpeg, ['-v', 'error', '-i', stem, '-f', 'f32le', output]);
