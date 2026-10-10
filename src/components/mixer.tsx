@@ -38,8 +38,8 @@ function Strip({ title, accent, children }: { title: string; accent: string; chi
   );
 }
 
-function StemStrip({ title, accent, gain, muted, onGain, onMute, note }: {
-  title: string; accent: string; gain: number; muted: boolean; onGain: (v: number) => void; onMute: (v: boolean) => void; note?: string;
+function StemStrip({ title, accent, gain, muted, onGain, onMute, note, error }: {
+  title: string; accent: string; gain: number; muted: boolean; onGain: (v: number) => void; onMute: (v: boolean) => void; note?: string; error?: string | null;
 }) {
   return (
     <Strip title={title} accent={accent}>
@@ -50,7 +50,7 @@ function StemStrip({ title, accent, gain, muted, onGain, onMute, note }: {
         <Slider label={`${title} volume`} value={gain} max={1.5} step={0.01} onChange={onGain} color={accent} valueText={`${Math.round(gain * 100)} percent`} />
         <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">{Math.round(gain * 100)}%</span>
       </div>
-      {note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
+      {error ? <div className="mt-1"><ErrorNote tone="warn">{error}</ErrorNote></div> : note && <p className="mt-1 text-xs text-muted-foreground">{note}</p>}
     </Strip>
   );
 }
@@ -66,7 +66,7 @@ function MicStrip({ engine, snap, index, accent }: { engine: AudioEngine; snap: 
       <div className="space-y-2">
         <div>
           <label className="lbl" htmlFor={`${idPrefix}-dev`}>Input device</label>
-          <select id={`${idPrefix}-dev`} className="field" value={m.deviceId} onChange={(e) => engine.setMicDevice(index, e.target.value)} disabled={m.status === 'starting'}>
+          <select id={`${idPrefix}-dev`} className="field" value={m.deviceId} onChange={(e) => engine.setMicDevice(index, e.target.value)}>
             <option value="">System default input</option>
             {!knownDevice && <option value={m.deviceId}>Previously selected input (not found)</option>}
             {snap.devices.map((d) => <option key={d.deviceId} value={d.deviceId}>{d.label}</option>)}
@@ -81,7 +81,7 @@ function MicStrip({ engine, snap, index, accent }: { engine: AudioEngine; snap: 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {on || m.status === 'starting' ? (
-            <button className="btn btn-sm" onClick={() => engine.disableMic(index)} disabled={m.status === 'starting'}><MicOff size={14} /> Turn off</button>
+            <button className="btn btn-sm" onClick={() => engine.disableMic(index)}><MicOff size={14} /> {m.status === 'starting' ? 'Cancel' : 'Turn off'}</button>
           ) : (
             <button className="btn btn-violet btn-sm" onClick={() => void engine.enableMic(index)} disabled={snap.micSupported === false}>
               <Mic size={14} /> {m.status === 'error' ? 'Try again' : 'Turn on'}
@@ -126,6 +126,7 @@ export function Mixer({ engine, snap }: { engine: AudioEngine; snap: EngineSnaps
         <StemStrip title="Backing" accent="#7556e8" gain={snap.backingGain} muted={snap.backingMuted} onGain={(v) => engine.setBackingGain(v)} onMute={(v) => engine.setBackingMuted(v)} />
         <StemStrip
           title="Guide vocal" accent="#ffd465" gain={snap.guideGain} muted={snap.guideMuted} onGain={(v) => engine.setGuideGain(v)} onMute={(v) => engine.setGuideMuted(v)}
+          error={snap.guideError}
           note={snap.transport !== 'idle' && snap.transport !== 'loading' && !snap.hasGuide ? 'This song has no guide vocal.' : 'Starts silent. Raise it to hear the original singer.'}
         />
         <MicStrip engine={engine} snap={snap} index={0} accent="#ff688b" />
