@@ -20,16 +20,17 @@ test('all five audio formats import with tags, duplicate detection, and allowed-
   try { execFileSync(ffmpeg, ['-version'], { stdio: 'ignore' }); }
   catch { t.skip('FFmpeg is required for audio ingestion fixtures'); return; }
   for (const ext of ['mp3', 'wav', 'flac', 'm4a', 'ogg']) {
-    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-metadata', 'title=Format fixture', '-metadata', 'artist=Test singer', path.join(sources, `fixture.${ext}`)], { stdio: 'pipe' });
+    // Pin the Ogg codec: FFmpeg's default depends on the build (Vorbis with libvorbis, otherwise FLAC-in-Ogg, whose tags music-metadata ignores).
+    const codec = ext === 'ogg' ? ['-c:a', 'libopus'] : [];
+    execFileSync(ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', ...codec, '-metadata', 'title=Format fixture', '-metadata', 'artist=Test singer', path.join(sources, `fixture.${ext}`)], { stdio: 'pipe' });
   }
   assert.deepEqual(await importFolder(sources, 'balanced'), { added: 5, duplicates: 0, errors: [] });
   assert.deepEqual(await importFolder(sources, 'balanced'), { added: 0, duplicates: 5, errors: [] });
   const rows = db.prepare('SELECT title,artist,duration,original FROM tracks').all() as { title: string; artist: string; duration: number; original: string }[];
   assert.equal(rows.length, 5);
   for (const row of rows) {
-    // The metadata library does not expose this FFmpeg Opus-in-OGG fixture's tags.
-    assert.equal(row.title, row.original.endsWith('.ogg') ? 'fixture' : 'Format fixture');
-    assert.equal(row.artist, row.original.endsWith('.ogg') ? 'Unknown artist' : 'Test singer');
+    assert.equal(row.title, 'Format fixture');
+    assert.equal(row.artist, 'Test singer');
     assert.ok(row.duration >= 0.9 && row.duration < 1.2);
   }
   await assert.rejects(importFolder(os.tmpdir(), 'balanced'), /not in KARAOKE_IMPORT_ROOTS/);
