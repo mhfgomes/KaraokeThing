@@ -2,7 +2,7 @@ import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, mkdir, access, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, access, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -60,4 +60,15 @@ test('worker restart requeues interrupted work and removes incomplete generation
     await exited;
     clearTimeout(force);
   }
+});
+
+test('folder import stops at bounded work and reports saved progress in the existing response shape', async () => {
+  const folder = path.join(sources, 'bounded');
+  await mkdir(folder);
+  for (let i = 0; i < 4; i++) await writeFile(path.join(folder, `${i}.wav`), 'invalid audio');
+  const result = await importFolder(folder, 'balanced', { files: 2, entries: 100, milliseconds: 30000 });
+  assert.deepEqual(Object.keys(result), ['added', 'duplicates', 'errors']);
+  assert.equal(result.added, 0); assert.equal(result.duplicates, 0);
+  assert.equal(result.errors.length, 3);
+  assert.match(result.errors[2], /work limit.*smaller subfolders/);
 });

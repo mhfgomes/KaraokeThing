@@ -12,9 +12,9 @@ export function parseLrc(text: string): LyricLine[] {
     const content = raw.replace(/\[\d+:\d{2}(?:\.\d+)?\]/g, '').trim();
     // Enhanced LRC word timestamps are real timing data, never interpolated.
     const wordTokens = [...content.matchAll(/<(\d+):(\d{2}(?:\.\d+)?)>([^<]*)/g)];
-    const words: LyricWord[] = wordTokens.map((m, i) => ({ text: m[3], start: Number(m[1]) * 60 + Number(m[2]) + offset,
-      ...(wordTokens[i + 1] ? { end: Number(wordTokens[i + 1][1]) * 60 + Number(wordTokens[i + 1][2]) + offset } : {}) }));
-    for (const match of times) lines.push({ start: Math.max(0, Number(match[1]) * 60 + Number(match[2]) + offset), text: content.replace(/<\d+:\d{2}(?:\.\d+)?>/g, ''), ...(words.length ? { words } : {}) });
+    const words: LyricWord[] = wordTokens.map((m, i) => ({ text: m[3], start: Math.max(0, Number(m[1]) * 60 + Number(m[2]) - offset),
+      ...(wordTokens[i + 1] ? { end: Math.max(0, Number(wordTokens[i + 1][1]) * 60 + Number(wordTokens[i + 1][2]) - offset) } : {}) }));
+    for (const match of times) lines.push({ start: Math.max(0, Number(match[1]) * 60 + Number(match[2]) - offset), text: content.replace(/<\d+:\d{2}(?:\.\d+)?>/g, ''), ...(words.length ? { words } : {}) });
   }
   lines.sort((a, b) => a.start - b.start);
   for (let i = 0; i < lines.length - 1; i++) lines[i].end = lines[i + 1].start;
