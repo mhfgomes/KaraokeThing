@@ -9,6 +9,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Only these mean the lease is really gone; network errors (0) and 5xx are worth retrying. */
+export const isLeaseLost = (e: unknown) => e instanceof ApiError && (e.status === 401 || e.status === 409);
+
+/** A fresh random id per page load, so duplicated tabs never share a playback lease. */
+export function newControllerId(): string {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+}
+
 export interface IngestResult { added: number; duplicates: number; errors: string[] }
 export type Quality = 'balanced' | 'high';
 

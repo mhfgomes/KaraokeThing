@@ -32,6 +32,7 @@ export interface EngineSnapshot {
   loadProgress: number;
   loadStage: string;
   hasGuide: boolean;
+  guideError: string | null;
   error: string | null;
   backingGain: number;
   guideGain: number;
@@ -48,12 +49,14 @@ export interface EngineSnapshot {
   outputLatency: number | null;
 }
 
+import { outputDelaySeconds } from './lyric-timing';
+
 const makeMic = (): MicSnapshot => ({
   status: 'off', error: null, deviceId: '', label: null, mode: 'mix', gain: 1, muted: false, monitor: false, channels: null,
 });
 
 const INITIAL: EngineSnapshot = {
-  transport: 'idle', trackId: null, duration: 0, loadProgress: 0, loadStage: '', hasGuide: false, error: null,
+  transport: 'idle', trackId: null, duration: 0, loadProgress: 0, loadStage: '', hasGuide: false, guideError: null, error: null,
   backingGain: 0.9, guideGain: 0, backingMuted: false, guideMuted: false,
   mics: [makeMic(), makeMic()],
   devices: [], devicesLabelled: false, secureContext: null, micSupported: null,
@@ -151,7 +154,7 @@ export class AudioEngine {
     navigator.mediaDevices?.removeEventListener?.('devicechange', this.refreshDevices);
     this.unload();
     for (const i of [0, 1] as const) this.disableMic(i);
-    void this.ctx?.close();
+    this.ctx?.close().catch(() => undefined);
     this.ctx = null;
     this.chains = null;
     this.initialised = false;
@@ -278,7 +281,7 @@ export class AudioEngine {
     this.backingBuf = null;
     this.guideBuf = null;
     this.offset = 0;
-    this.set({ transport: 'loading', trackId, duration: 0, loadProgress: 0, loadStage: 'Downloading audio', hasGuide: false, error: null });
+    this.set({ transport: 'loading', trackId, duration: 0, loadProgress: 0, loadStage: 'Downloading audio', hasGuide: false, guideError: null, error: null });
     const progress = [0, 0];
     const report = (i: number) => (loaded: number, total: number) => {
       if (seq !== this.loadSeq) return;
@@ -286,24 +289,29 @@ export class AudioEngine {
       this.set({ loadProgress: (progress[0] + progress[1]) / 2 * 0.8 });
     };
     try {
+      // Only a 404 means the song has no guide; other guide failures are reported but don't block the backing.
+      let guideError: string | null = null;
+      const guideFailed = (e: unknown) => {
+        if (e instanceof DOMException && e.name === 'AbortError') throw e;
+        guideError = e instanceof Error && e.name === 'EncodingError' ? 'The guide vocal could not be decoded.'
+          : `The guide vocal failed to load: ${e instanceof Error ? e.message : 'unknown error'}`;
+        return null;
+      };
       const [backingRaw, guideRaw] = await Promise.all([
         this.fetchBuffer(`/api/media/${encodeURIComponent(trackId)}/backing`, abort.signal, report(0)),
-        this.fetchBuffer(`/api/media/${encodeURIComponent(trackId)}/guide`, abort.signal, report(1)).catch((e) => {
-          if (e instanceof DOMException && e.name === 'AbortError') throw e;
-          return null;
-        }),
+        this.fetchBuffer(`/api/media/${encodeURIComponent(trackId)}/guide`, abort.signal, report(1)).catch(guideFailed),
       ]);
       if (seq !== this.loadSeq) throw new LoadAbortedError();
       if (!backingRaw) throw new Error('The backing track is not available for this song yet.');
       this.set({ loadStage: 'Decoding audio', loadProgress: 0.85 });
       const [backing, guide] = await Promise.all([
         ctx.decodeAudioData(backingRaw),
-        guideRaw ? ctx.decodeAudioData(guideRaw).catch(() => null) : Promise.resolve(null),
+        guideRaw ? ctx.decodeAudioData(guideRaw).catch(guideFailed) : Promise.resolve(null),
       ]);
       if (seq !== this.loadSeq) throw new LoadAbortedError();
       this.backingBuf = backing;
       this.guideBuf = guide;
-      this.set({ transport: 'ready', duration: backing.duration, loadProgress: 1, loadStage: '', hasGuide: !!guide });
+      this.set({ transport: 'ready', duration: backing.duration, loadProgress: 1, loadStage: '', hasGuide: !!guide, guideError });
     } catch (e) {
       if (e instanceof LoadAbortedError || (e instanceof DOMException && e.name === 'AbortError')) {
         throw new LoadAbortedError();
@@ -328,7 +336,7 @@ export class AudioEngine {
     this.backingBuf = null;
     this.guideBuf = null;
     this.offset = 0;
-    this.set({ transport: 'idle', trackId: null, duration: 0, loadProgress: 0, loadStage: '', hasGuide: false, error: null });
+    this.set({ transport: 'idle', trackId: null, duration: 0, loadProgress: 0, loadStage: '', hasGuide: false, guideError: null, error: null });
   }
 
   // ---- transport ----------------------------------------------------------
@@ -382,6 +390,14 @@ export class AudioEngine {
       return Math.min(duration, Math.max(this.offset, this.offset + this.ctx.currentTime - this.startedAt));
     }
     return this.offset;
+  }
+
+  /** Position of the audio currently reaching the listener, compensating for reported output latency. Use for lyrics. */
+  getAudiblePosition(): number {
+    const pos = this.getPosition();
+    const c = this.ctx as (AudioContext & { outputLatency?: number }) | null;
+    if (this.snap.transport !== 'playing' || !c) return pos;
+    return Math.max(0, pos - outputDelaySeconds(c.baseLatency, c.outputLatency));
   }
 
   play() {
@@ -454,6 +470,7 @@ export class AudioEngine {
       const stream = await navigator.mediaDevices.getUserMedia({ audio });
       if (attempt !== this.micSeq[i] || !this.ctx || !this.chains) {
         stream.getTracks().forEach(track => track.stop());
+        if (attempt === this.micSeq[i]) this.setMic(i, { status: 'off', error: null });
         return;
       }
       const track = stream.getAudioTracks()[0];

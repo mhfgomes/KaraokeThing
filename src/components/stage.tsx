@@ -61,6 +61,7 @@ export function Stage({ engine, snap, track, singer, nextUp, canControl, offset,
   const fullscreen = useSyncExternalStore(subscribeFs, () => !!document.fullscreenElement, () => false);
   const [, tick] = useState(0);
   const [showTiming, setShowTiming] = useState(false);
+  const [scrub, setScrub] = useState<number | null>(null);
   const playing = snap.transport === 'playing';
 
   useEffect(() => {
@@ -71,8 +72,17 @@ export function Stage({ engine, snap, track, singer, nextUp, canControl, offset,
     return () => cancelAnimationFrame(raf);
   }, [playing]);
 
-  const pos = engine.getPosition();
-  const t = pos - offset;
+  // Seek only when the drag is committed; restarting sources on every drag event stutters.
+  useEffect(() => {
+    if (scrub === null) return;
+    const end = () => setScrub(null);
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+    return () => { window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); };
+  }, [scrub]);
+
+  const pos = scrub ?? engine.getPosition();
+  const t = (scrub ?? engine.getAudiblePosition()) - offset;
   const lyrics = track?.lyrics;
   const loaded = track && snap.trackId === track.id && snap.transport !== 'idle';
   const hasLines = !!lyrics && (lyrics.kind === 'word' || lyrics.kind === 'line') && lyrics.lines.length > 0;
@@ -192,7 +202,7 @@ export function Stage({ engine, snap, track, singer, nextUp, canControl, offset,
             <Slider
               className="order-first basis-full sm:order-none sm:basis-auto sm:flex-1" label="Seek position" value={Math.min(pos, snap.duration || 1)} max={snap.duration || 1} step={0.1}
               disabled={!canSeek} valueText={`${formatTime(pos)} of ${formatTime(snap.duration)}`} color="#ffd465"
-              onChange={(v) => engine.seek(v)}
+              onChange={setScrub} onCommit={(v) => { setScrub(null); engine.seek(v); }}
             />
             <span className="w-12 font-mono text-sm tabular-nums text-white/70" aria-hidden>{formatTime(snap.duration)}</span>
             <button className="btn btn-icon" onClick={() => engine.seek(pos + 10)} disabled={!canSeek} aria-label="Forward 10 seconds"><SkipForward size={16} /></button>

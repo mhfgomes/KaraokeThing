@@ -38,8 +38,8 @@ export function ErrorNote({ children, tone = 'error' }: { children: ReactNode; t
   );
 }
 
-export function Slider({ label, value, min = 0, max = 1, step = 0.01, onChange, disabled, color, valueText, className }: {
-  label: string; value: number; min?: number; max?: number; step?: number; onChange: (v: number) => void;
+export function Slider({ label, value, min = 0, max = 1, step = 0.01, onChange, onCommit, disabled, color, valueText, className }: {
+  label: string; value: number; min?: number; max?: number; step?: number; onChange: (v: number) => void; onCommit?: (v: number) => void;
   disabled?: boolean; color?: string; valueText?: string; className?: string;
 }) {
   return (
@@ -49,6 +49,7 @@ export function Slider({ label, value, min = 0, max = 1, step = 0.01, onChange, 
       value={[value]} min={min} max={max} step={step} disabled={disabled}
       thumbProps={{ 'aria-label': label, getAriaValueText: valueText ? () => valueText : undefined }}
       onValueChange={(v) => onChange(Array.isArray(v) ? v[0] : v)}
+      onValueCommitted={onCommit && ((v) => onCommit(Array.isArray(v) ? v[0] : v))}
     />
   );
 }

@@ -8,6 +8,7 @@ import { formatTime } from '@/lib/client-api';
 interface Props {
   queue: QueueEntry[];
   trackFor: (id: string) => Track | undefined;
+  isGone?: (id: string) => boolean;
   admin: boolean;
   startDisabledReason: string | null;
   onStart: (entry: QueueEntry) => void;
@@ -15,7 +16,7 @@ interface Props {
   onReorder: (ids: string[]) => void;
 }
 
-export function QueuePanel({ queue, trackFor, admin, startDisabledReason, onStart, onRemove, onReorder }: Props) {
+export function QueuePanel({ queue, trackFor, isGone, admin, startDisabledReason, onStart, onRemove, onReorder }: Props) {
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const [announce, setAnnounce] = useState('');
@@ -53,6 +54,7 @@ export function QueuePanel({ queue, trackFor, admin, startDisabledReason, onStar
         {queue.map((q, i) => {
           const t = trackFor(q.trackId);
           const unavailable = !t || t.status !== 'ready';
+          const gone = !t && !!isGone?.(q.trackId);
           return (
             <li
               key={q.id}
@@ -79,8 +81,8 @@ export function QueuePanel({ queue, trackFor, admin, startDisabledReason, onStar
               <span className="pos" aria-label={i === 0 ? "Position 1, up next" : `Position ${i + 1}`}>{i + 1}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-display text-xl font-bold leading-tight text-coral">{q.singer}</p>
-                <p className="truncate text-sm font-semibold leading-tight">{t ? t.title : 'Song not on the loaded page'}</p>
-                <p className="truncate text-xs text-muted-foreground">{t ? `${t.artist} · ${formatTime(t.duration)}` : 'Open the library to load it'}{t && t.status !== 'ready' ? ' · not ready' : ''}</p>
+                <p className="truncate text-sm font-semibold leading-tight">{t ? t.title : gone ? 'Song removed from the library' : 'Loading song details…'}</p>
+                <p className="truncate text-xs text-muted-foreground">{t ? `${t.artist} · ${formatTime(t.duration)}` : gone ? 'Remove this entry or pick another song' : ''}{t && t.status !== 'ready' ? ' · not ready' : ''}</p>
               </div>
               {admin && (
                 <div className="flex w-full items-center justify-end gap-1 border-t border-white/10 pt-2">
