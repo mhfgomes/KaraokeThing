@@ -1,0 +1,19 @@
+# Client/server contract
+
+All API responses JSON except media. Errors `{error:string}` with meaningful HTTP status. Same-origin mutations, admin session required except setup/login. Types in src/lib/types.ts. Routes run on Node.
+
+- GET `/api/state?q=&favorites=1&page=1&limit=50`: AppState, including `wordAlignmentEnabled`. All clients can read. importRoots populated for admin only; media original/admin-only.
+- GET `/api/tracks/{id}`: `{track:Track}`. Public metadata and cached lyrics, including songs outside the current library page. Does not expose managed asset paths.
+- POST `/api/tracks/{id}/alignment`: `{action:'start'|'cancel'}`. Disabled by default: start returns 409 unless `KARAOKE_EXPERIMENTAL_WORD_ALIGNMENT=1`. Admin-only durable local word alignment against the prepared guide vocal and existing timed lyrics. Progress/error appears in `Track.alignment`. Audio remains ready/playable during queued or failed alignment. Existing word lyrics are saved on success only; changing lyrics/audio cancels stale work. Returns `{ok:true}`.
+- POST `/api/auth`: `{action:'setup'|'login'|'logout'|'password',password:string,newPassword?:string}`. Setup only before password exists; setup/login response establishes HttpOnly session. Logout expires session.
+- POST `/api/upload`: multipart `files` (multiple), optional `quality` balanced/high. Returns `{added:number,duplicates:number,errors:string[]}`. Streams uploads; 250MB per file.
+- POST `/api/import`: `{path:string,quality?:'balanced'|'high'}` imports audio recursively from a configured allowed host root. Same result shape as upload. Allowlist is KARAOKE_IMPORT_ROOTS env separated by OS path.delimiter.
+- PATCH `/api/tracks/{id}`: optional title, artist, album, favorite, lyricOffset. Returns `{ok:true}`. Metadata edits do not discard existing lyrics automatically.
+- DELETE `/api/tracks/{id}`: cancels jobs and removes managed assets, refuses deleting active track. `{ok:true}`.
+- POST `/api/tracks/{id}/prepare`: `{action:'retry'|'cancel',quality?:'balanced'|'high'}`. Retrying replaces job and preserves last completed assets until new outputs ready.
+- GET `/api/tracks/{id}/lyrics`: lyric search matches `{matches:LyricMatch[]}`; admin only. POST same URL `{matchId:number}` fetches/selects lyrics, or `{action:'lookup'}` attempts direct metadata match. Returns `{lyrics:Lyrics}`. If unavailable/offline returns explicit error, preserving existing cache.
+- GET `/api/media/{id}/{asset}` asset backing/guide/original. Streams with byte ranges. Only backing/guide public. Correct MIME audio/mpeg. Ready generated stems; originals preserve source MIME.
+- POST `/api/queue`: `{trackId:string,singer:string}` adds. PATCH `{ids:string[]}` reorders exact entry set. DELETE `{id:string}` removes. `{ok:true}`.
+- POST `/api/session`: `{action:'claim'|'heartbeat'|'release',controller:string,trackId?:string}`. All actions require an admin session. Claim requires a ready track and refuses another controller/session until its 30-second lease expires. Ownership binds the browser UUID to the authenticated session; heartbeat every 10 seconds. Release when playback ends. Logout or password change invalidates the associated lease. Public state hides the session owner. Client pauses on heartbeat failure and stops audio and microphone capture when admin access is lost. Returns `{ok:true}`.
+
+Client: poll state while visible, preserve current paginated/search results, handle offline host errors. Active player uses independent fully fetched stem buffers and common Web Audio clock, not two unsynchronized audio elements. At song end wait for host; do not auto-play. Queue removal should happen when host explicitly starts its entry, not silently for an unrelated solo playback. Admin is single account. Visitors browse only. Responsive phones initially, no remote functionality.
