@@ -207,6 +207,28 @@ test('login throttling isolates clients and successful login clears failures', a
   assert.equal((await login('192.0.2.2', 'bad')).status, 429);
 });
 
+test('rotating forged forwarding headers cannot exceed the global login failure cap', async (t) => {
+  const windowMs = 10 * 60000;
+  let now = Date.now() + windowMs;
+  t.mock.method(Date, 'now', () => now);
+  const login = (address: string, password = 'bad') => handleApi(new Request('http://localhost:3000/api/auth', {
+    method: 'POST',
+    headers: { 'x-forwarded-for': address, 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'login', password }),
+  }), ['auth']);
+  for (let i = 0; i < 100; i++) {
+    assert.equal((await login(`forged-${i}`)).status, 401, `guess ${i + 1}`);
+    // Clearing a client's bucket must not erase its failures from the global count.
+    if (i === 49) assert.equal((await login('forged-49', 'test-password-unique')).status, 200);
+  }
+  for (let i = 100; i < 110; i++) assert.equal((await login(`forged-${i}`)).status, 429);
+  assert.equal((await login('host', 'test-password-unique')).status, 429);
+  now += windowMs - 1;
+  assert.equal((await login('another-forged-client')).status, 429);
+  now += 1;
+  assert.equal((await login('host', 'test-password-unique')).status, 200);
+});
+
 test('multipart batches drain every file despite ingestion failures', async () => {
   const form = new FormData();
   for (let i = 0; i < 8; i++) form.append('files', new Blob(['invalid audio']), `${i}.wav`);
