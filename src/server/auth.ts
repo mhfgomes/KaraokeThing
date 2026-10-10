@@ -47,11 +47,25 @@ export function requireSameOrigin(request: Request) {
   if (request.headers.get('sec-fetch-site') === 'cross-site') throw new HttpError(403, 'Cross-site requests are not allowed.');
 }
 export class HttpError extends Error { constructor(public status: number, message: string) { super(message); } }
-const loginAttempts: number[] = [];
-export function checkLoginAttempts() {
-  const start = Date.now() - 10 * 60000;
-  while (loginAttempts[0] < start) loginAttempts.shift();
-  if (loginAttempts.length >= 15) throw new HttpError(429, 'Too many sign-in attempts. Try again in ten minutes.');
+const loginAttempts = new Map<string, number[]>();
+function clientKey(request: Request) {
+  return request.headers.get('x-forwarded-for')?.split(',')[0].trim().slice(0, 200) || request.headers.get('x-real-ip')?.slice(0, 200) || `unknown:${request.headers.get('user-agent')?.slice(0, 200) || 'client'}`;
 }
-export function recordFailedLogin() { loginAttempts.push(Date.now()); }
+export function checkLoginAttempts(request: Request) {
+  const start = Date.now() - 10 * 60000;
+  for (const [key, attempts] of loginAttempts) {
+    while (attempts.length && attempts[0] <= start) attempts.shift();
+    if (!attempts.length) loginAttempts.delete(key);
+  }
+  if ((loginAttempts.get(clientKey(request))?.length || 0) >= 15) throw new HttpError(429, 'Too many sign-in attempts. Try again in ten minutes.');
+}
+export function recordFailedLogin(request: Request) {
+  const key = clientKey(request);
+  if (!loginAttempts.has(key)) {
+    if (loginAttempts.size >= 10000) loginAttempts.delete(loginAttempts.keys().next().value!);
+    loginAttempts.set(key, []);
+  }
+  loginAttempts.get(key)!.push(Date.now());
+}
+export function clearLoginAttempts(request: Request) { loginAttempts.delete(clientKey(request)); }
 export function setupRequired() { return !setting('password'); }

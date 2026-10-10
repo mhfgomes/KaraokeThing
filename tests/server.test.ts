@@ -98,8 +98,11 @@ test('retry/cancel creates durable jobs and preserves previous prepared assets',
 });
 test('line and enhanced word lyrics retain real timings and honest fallbacks', () => {
   const lines = parseLrc('[offset:100]\n[00:01.50][00:05.00]Hello\n[00:08.00]<00:08.00>Sing <00:08.50>now');
-  assert.equal(lines[0].start, 1.6); assert.equal(lines[1].start, 5.1);
-  assert.equal(lines[2].words![1].start, 8.6);
+  assert.equal(lines[0].start, 1.4); assert.equal(lines[1].start, 4.9);
+  assert.equal(lines[2].words![1].start, 8.4);
+  const early = parseLrc('[offset:2000]\n[00:01.00]<00:01.00>Early <00:01.50>words');
+  assert.equal(early[0].start, 0); assert.equal(early[0].words![0].start, 0); assert.equal(early[0].words![0].end, 0);
+  assert.equal(parseLrc('[offset:-100]\n[00:01.00]Later')[0].start, 1.1);
   const base = { id: 1, trackName: 'Song', artistName: 'Artist', albumName: '', duration: 1 };
   assert.equal(normalizeLyrics({ ...base, plainLyrics: 'Hello' }).kind, 'plain');
   assert.equal(normalizeLyrics(base).kind, 'missing');
@@ -170,4 +173,46 @@ test('opt-in word alignment is admin-only, durable, deduplicated, cancelable, an
   assert.equal((await call(`tracks/${id}/alignment`, 'POST', { action: 'cancel' })).status, 200);
   assert.equal((db.prepare("SELECT COUNT(*) as n FROM alignment_jobs WHERE track_id=? AND status IN ('queued','running')").get(id) as { n: number }).n, 0);
   assert.equal(getTrack(id)!.status, 'ready');
+});
+
+test('automatic lyric saves preserve host selections made during lookup', async () => {
+  const id = await seed('Lyrics race');
+  const automatic = { kind: 'plain' as const, plain: 'Automatic', lines: [] };
+  await saveLyrics(id, automatic, undefined, true);
+  assert.equal(JSON.parse(getTrack(id)!.lyrics).plain, 'Automatic');
+  const chosen = { kind: 'plain' as const, plain: 'Host choice', lines: [] };
+  await saveLyrics(id, chosen);
+  db.prepare('UPDATE tracks SET lyrics=? WHERE id=?').run(JSON.stringify({ kind: 'missing', lines: [], plain: '' }), id);
+  const pending = saveLyrics(id, automatic, undefined, true);
+  db.prepare('UPDATE tracks SET lyrics=? WHERE id=?').run(JSON.stringify(chosen), id);
+  await pending;
+  assert.deepEqual(JSON.parse(getTrack(id)!.lyrics), chosen);
+  assert.deepEqual(JSON.parse(await (await import('node:fs/promises')).readFile(path.join(temp, 'lyrics', `${id}.json`), 'utf8')), chosen);
+});
+test('unsupported methods return 405 before authentication or JSON parsing', async () => {
+  for (const route of ['queue', 'auth', 'upload', 'import', 'session', 'tracks/absent/prepare', 'tracks/absent/alignment']) {
+    const response = await call(route, 'GET', undefined, false);
+    assert.equal(response.status, 405, route);
+    assert.match(response.headers.get('allow')!, /POST/);
+    assert.deepEqual(await response.json(), { error: 'Method not allowed.' });
+  }
+});
+test('login throttling isolates clients and successful login clears failures', async () => {
+  const login = (address: string, password: string) => handleApi(new Request('http://localhost:3000/api/auth', { method: 'POST', headers: { 'x-forwarded-for': address, 'content-type': 'application/json' }, body: JSON.stringify({ action: 'login', password }) }), ['auth']);
+  for (let i = 0; i < 15; i++) assert.equal((await login('192.0.2.1', 'bad')).status, 401);
+  assert.equal((await login('192.0.2.1', 'bad')).status, 429);
+  for (let i = 0; i < 14; i++) assert.equal((await login('192.0.2.2', 'bad')).status, 401);
+  assert.equal((await login('192.0.2.2', 'test-password-unique')).status, 200);
+  for (let i = 0; i < 15; i++) assert.equal((await login('192.0.2.2', 'bad')).status, 401);
+  assert.equal((await login('192.0.2.2', 'bad')).status, 429);
+});
+
+test('multipart batches drain every file despite ingestion failures', async () => {
+  const form = new FormData();
+  for (let i = 0; i < 8; i++) form.append('files', new Blob(['invalid audio']), `${i}.wav`);
+  const response = await handleApi(new Request('http://localhost:3000/api/upload', { method: 'POST', headers: { cookie }, body: form }), ['upload']);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(result.errors.length, 8); assert.equal(result.added, 0);
+  assert.deepEqual(await (await import('node:fs/promises')).readdir(path.join(temp, 'temporary')), []);
 });

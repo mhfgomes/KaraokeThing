@@ -7,7 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import Busboy from 'busboy';
 import { z } from 'zod';
 import { DATA_DIR, db, getTrack, publicTrack, getQueue, setting, setSetting, transaction, existingManagedPath, type TrackRow } from './db';
-import { HttpError, requireAdmin, requireSameOrigin, isAdmin, passwordHash, passwordMatches, createSession, sessionCookie, cookieToken, sessionHash, checkLoginAttempts, recordFailedLogin, setupRequired } from './auth';
+import { HttpError, requireAdmin, requireSameOrigin, isAdmin, passwordHash, passwordMatches, createSession, sessionCookie, cookieToken, sessionHash, checkLoginAttempts, recordFailedLogin, clearLoginAttempts, setupRequired } from './auth';
 import { ingestFile, importFolder, importRoots, MAX_FILE_BYTES } from './ingest';
 import { lookupLyrics, searchLyrics, selectLyrics } from './lyrics';
 import { queueAlignment, cancelAlignment, wordAlignmentEnabled } from './alignment-jobs';
@@ -28,20 +28,22 @@ function activeSession() {
     return active?.expiresAt > Date.now() && session && session.expires > Date.now() ? active : null;
   } catch { return null; }
 }
-export async function saveLyrics(id: string, lyrics: Awaited<ReturnType<typeof lookupLyrics>>, alignmentJob?: { id: string; lyrics_snapshot: string; guide_snapshot: string }) {
+export async function saveLyrics(id: string, lyrics: Awaited<ReturnType<typeof lookupLyrics>>, alignmentJob?: { id: string; lyrics_snapshot: string; guide_snapshot: string }, onlyMissing = false) {
   const dest = path.join(DATA_DIR, 'lyrics', `${id}.json`);
   const temporary = `${dest}.${randomUUID()}.tmp`;
   try {
     await writeFile(temporary, JSON.stringify(lyrics));
-    transaction(() => {
+    const saved = transaction(() => {
       const track = getTrack(id);
       if (!track) throw new HttpError(404, 'Song no longer exists.');
+      if (onlyMissing && JSON.parse(track.lyrics).kind !== 'missing') return false;
       if (alignmentJob && (track.lyrics !== alignmentJob.lyrics_snapshot || track.guide !== alignmentJob.guide_snapshot || (db.prepare('SELECT status FROM alignment_jobs WHERE id=?').get(alignmentJob.id) as { status: string } | undefined)?.status !== 'running')) throw new HttpError(409, 'Lyrics or audio changed during word alignment.');
       renameSync(temporary, dest);
       db.prepare('UPDATE tracks SET lyrics=? WHERE id=?').run(JSON.stringify(lyrics), id);
       if (alignmentJob) db.prepare("UPDATE alignment_jobs SET status='completed',progress=1,error=NULL,updated_at=? WHERE id=?").run(new Date().toISOString(), alignmentJob.id);
+      return true;
     });
-    if (!alignmentJob && getTrack(id)?.guide) {
+    if (saved && !alignmentJob && getTrack(id)?.guide) {
       cancelAlignment(id);
       queueAlignment(id);
     }
@@ -51,6 +53,7 @@ async function upload(request: Request) {
   if (!request.body) throw new HttpError(400, 'No files were uploaded.');
   const result = { added: 0, duplicates: 0, errors: [] as string[] };
   const pending: Promise<void>[] = [];
+  let ingestion = Promise.resolve();
   let quality: 'balanced' | 'high' = 'balanced';
   const parser = Busboy({ headers: { 'content-type': request.headers.get('content-type') || '' }, limits: { fileSize: MAX_FILE_BYTES, files: 100, fields: 5, fieldSize: 1000 } });
   parser.on('field', (name, value) => { if (name === 'quality') quality = qualitySchema.parse(value); });
@@ -62,7 +65,9 @@ async function upload(request: Request) {
       try {
         await pipeline(file, createWriteStream(filename), { signal: request.signal });
         if (file.truncated) throw new HttpError(413, `${originalName} exceeds 250 MB.`);
-        const outcome = await ingestFile(filename, path.basename(originalName), quality);
+        const task = ingestion.then(() => ingestFile(filename, path.basename(originalName), quality, request.signal));
+        ingestion = task.then(() => {}, () => {});
+        const outcome = await task;
         if (outcome === 'added') result.added++; else result.duplicates++;
       } catch (error) { result.errors.push(error instanceof Error ? error.message : 'Upload failed.'); }
       finally { await rm(filename, { force: true }); }
@@ -104,6 +109,8 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
   try {
     const route = segments.join('/');
     const method = request.method;
+    const methods = route === 'state' ? ['GET'] : ['auth', 'upload', 'import', 'session'].includes(route) ? ['POST'] : route === 'queue' ? ['POST', 'PATCH', 'DELETE'] : segments[0] === 'media' && segments.length === 3 ? ['GET', 'HEAD'] : segments[0] === 'tracks' && segments.length === 2 ? ['GET', 'PATCH', 'DELETE'] : segments[0] === 'tracks' && segments.length === 3 ? segments[2] === 'lyrics' ? ['GET', 'POST'] : ['prepare', 'alignment'].includes(segments[2]) ? ['POST'] : null : null;
+    if (methods && !methods.includes(method)) return json({ error: 'Method not allowed.' }, 405, { Allow: methods.join(', ') });
     if (!['GET', 'HEAD'].includes(method)) requireSameOrigin(request);
     if (route === 'state' && method === 'GET') {
       const url = new URL(request.url);
@@ -141,9 +148,10 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
         transaction(() => { if (!setupRequired()) throw new HttpError(409, 'An admin password is already set. Sign in instead.'); setSetting('password', encoded); });
         return json({ ok: true }, 200, { 'Set-Cookie': createSession(request) });
       }
-      checkLoginAttempts();
+      checkLoginAttempts(request);
       const hash = setting('password');
-      if (!hash || !passwordMatches(input.password, hash)) { recordFailedLogin(); throw new HttpError(401, 'Incorrect host password.'); }
+      if (!hash || !passwordMatches(input.password, hash)) { recordFailedLogin(request); throw new HttpError(401, 'Incorrect host password.'); }
+      clearLoginAttempts(request);
       if (input.action === 'password') {
         requireAdmin(request);
         if (!input.newPassword || input.newPassword.length < 8) throw new HttpError(400, 'Use at least eight characters for the new password.');

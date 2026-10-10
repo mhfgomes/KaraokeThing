@@ -1,6 +1,6 @@
 import { open, readFile, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
-import { DATA_DIR, db, getTrack, managedPath, existingManagedPath, setSetting, setting, transaction } from '../server/db';
+import { DATA_DIR, db, getTrack, publicTrack, managedPath, existingManagedPath, setSetting, setting, transaction } from '../server/db';
 import { lookupLyrics } from '../server/lyrics';
 import { saveLyrics } from '../server/api';
 import { modelStatus, separateAudio } from './separation';
@@ -54,9 +54,9 @@ async function prepare(job: Job) {
     if (!jobStillRunning(job.id) || !getTrack(track.id)) controller.abort(new Error('Preparation canceled.'));
     void heartbeat(true).catch(console.error);
   }, 1000);
-  const lyricsTask = lookupLyrics(track).then(async lyrics => {
-    if (getTrack(track.id) && !controller.signal.aborted) await saveLyrics(track.id, lyrics);
-  }).catch(error => console.info(`[lyrics] ${track.title}: ${error instanceof Error ? error.message : error}`));
+  const lyricsTask = publicTrack(track).lyrics.kind === 'missing' ? lookupLyrics(track).then(async lyrics => {
+    if (getTrack(track.id) && !controller.signal.aborted) await saveLyrics(track.id, lyrics, undefined, true);
+  }).catch(error => console.info(`[lyrics] ${track.title}: ${error instanceof Error ? error.message : error}`)) : Promise.resolve();
   try {
     const result = await separateAudio(await existingManagedPath(track.original), dir, { quality: job.quality, signal: controller.signal, onProgress: fraction => {
       if (jobStillRunning(job.id)) db.prepare("UPDATE tracks SET progress=? WHERE id=? AND status='running'").run(Math.min(0.99, Math.max(0, fraction)), track.id);
