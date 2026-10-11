@@ -1,0 +1,19 @@
+services:
+  karaoke:
+    build: .
+    image: karaokething:local
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "${KARAOKE_PORT:-3100}:3100"
+    environment:
+      KARAOKE_DATA_DIR: /data
+      KARAOKE_HOST: 0.0.0.0
+      PORT: "3100"
+      KARAOKE_INFERENCE_THREADS: "${KARAOKE_INFERENCE_THREADS:-2}"
+    volumes:
+      - karaoke-data:/data
+
+volumes:
+  karaoke-data:

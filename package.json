@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "node --env-file-if-exists=.env.local --import tsx scripts/launch.ts",
     "build": "next build",
+    "build:docker": "KARAOKE_STANDALONE=1 next build && node scripts/build-docker.mjs",
     "start": "node --env-file-if-exists=.env.local --import tsx scripts/launch.ts --production",
     "worker": "node --env-file-if-exists=.env.local --import tsx src/worker/index.ts",
     "model:install": "node --env-file-if-exists=.env.local --import tsx scripts/install-model.ts",
@@ -40,12 +41,13 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@typescript/native": "npm:typescript@^7.0.2",
+    "esbuild": "0.28.2",
     "eslint": "^10.12.0",
     "eslint-config-next": "16.4.0",
+    "shadcn": "^4.21.4",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
-    "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "shadcn": "^4.21.4"
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "packageManager": "pnpm@12.10.1",
   "engines": {
