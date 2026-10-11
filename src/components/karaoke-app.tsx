@@ -587,7 +587,7 @@ export function KaraokeApp() {
         track={queueTrack} singers={singers} onClose={() => setQueueTrack(null)}
         onAdded={(t) => { tracks.seen([t]); void refresh(); }}
       />
-      <TrackDialog track={editTrack} activeTrackId={now?.trackId ?? active?.trackId ?? null} wordAlignmentEnabled={state.wordAlignmentEnabled} onClose={() => setEditId(null)} onChanged={() => { if (editId) tracks.invalidate(editId); void refresh(); }} />
+      <TrackDialog track={editTrack} activeTrackId={now?.trackId ?? active?.trackId ?? null} wordAlignmentEnabled={state.wordAlignmentEnabled} worker={state.worker} onClose={() => setEditId(null)} onChanged={() => { if (editId) tracks.invalidate(editId); void refresh(); }} />
     </div>
   );
 }
