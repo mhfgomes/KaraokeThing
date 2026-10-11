@@ -47,7 +47,6 @@ jobs:
           images: ${{ vars.DOCKERHUB_IMAGE }}
           flavor: latest=${{ inputs.nightly && 'false' || 'auto' }}
           tags: |
-            type=semver,pattern={{version}},enable=${{ !inputs.nightly }}
             type=semver,pattern={{raw}},enable=${{ !inputs.nightly }}
             type=raw,value=nightly,enable=${{ inputs.nightly }}
 
@@ -109,7 +108,6 @@ jobs:
           images: ${{ vars.DOCKERHUB_IMAGE }}
           flavor: latest=${{ inputs.nightly && 'false' || 'auto' }}
           tags: |
-            type=semver,pattern={{version}},enable=${{ !inputs.nightly }}
             type=semver,pattern={{raw}},enable=${{ !inputs.nightly }}
             type=raw,value=nightly,enable=${{ inputs.nightly }}
 

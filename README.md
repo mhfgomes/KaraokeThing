@@ -73,7 +73,7 @@ The workflows have separate entry points: **CI** (`ci.yml`) checks pushes to `ma
 - Variable `DOCKERHUB_IMAGE`: the complete image name, such as `your-account/karaokething` (an organization namespace can also be used).
 - Secret `DOCKERHUB_TOKEN`: a Docker Hub access token with write access to that repository.
 
-Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:1.2.3`, `:v1.2.3`, and `:latest`. Prereleases such as `v1.2.3-rc.1` publish both version tags and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
+Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:v1.2.3` and `:latest`. Prereleases such as `v1.2.3-rc.1` publish only `:v1.2.3-rc.1` and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
 
 Every day at **03:17 UTC**, Docker Nightly checks and builds the default branch (`master`) and publishes `your-account/karaokething:nightly` for AMD64 and ARM64. Nightly publishing requires both CI jobs to pass and does not update `latest`. The schedule becomes active when the workflow is on the default branch.
 
