@@ -67,7 +67,7 @@ Verified with Docker Desktop's Linux ARM64 runtime: image build, model download 
 
 ### Publishing to Docker Hub
 
-Pushing a Git tag matching `v*.*.*` runs the source checks and Docker smoke test, then publishes a multi-platform image for `linux/amd64` and `linux/arm64`. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
+The workflows have separate entry points: **CI** (`ci.yml`) checks branch pushes and pull requests; **Docker Release** (`release.yml`) publishes on `v*.*.*` tags; **Docker Nightly** (`nightly.yml`) publishes scheduled or manually requested builds. Both publishing workflows reuse CI and the shared `publish-docker.yml` workflow. Publishing waits for the source checks and Docker smoke test, and builds for `linux/amd64` and `linux/arm64`. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
 
 - Variable `DOCKERHUB_USERNAME`: the Docker Hub account used to log in.
 - Variable `DOCKERHUB_IMAGE`: the complete image name, such as `your-account/karaokething` (an organization namespace can also be used).
@@ -75,7 +75,9 @@ Pushing a Git tag matching `v*.*.*` runs the source checks and Docker smoke test
 
 Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:1.2.3`, `:v1.2.3`, and `:latest`. Prereleases such as `v1.2.3-rc.1` publish both version tags and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
 
-Every day at **03:17 UTC**, the same workflow checks and builds the default branch (`master`) and publishes `your-account/karaokething:nightly` for AMD64 and ARM64. Nightly publishing requires both CI jobs to pass and does not update `latest`. The schedule becomes active when the workflow is on the default branch.
+Every day at **03:17 UTC**, Docker Nightly checks and builds the default branch (`master`) and publishes `your-account/karaokething:nightly` for AMD64 and ARM64. Nightly publishing requires both CI jobs to pass and does not update `latest`. The schedule becomes active when the workflow is on the default branch.
+
+To publish a nightly manually, open **Actions → Docker Nightly → Run workflow**, select the branch to build, and run it. This uses the same checks and publishes only `nightly`. You can also trigger it with `gh workflow run nightly.yml --ref master`.
 
 ```sh
 git tag v1.2.3
