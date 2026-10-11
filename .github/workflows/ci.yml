@@ -7,13 +7,15 @@ on:
     tags:
       - "v*.*.*"
   pull_request:
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'schedule' && !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   checks:
@@ -71,7 +73,7 @@ jobs:
   publish:
     name: Publish to Docker Hub
     needs: [checks, docker]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: github.event_name == 'schedule' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -94,8 +96,9 @@ jobs:
           images: ${{ vars.DOCKERHUB_IMAGE }}
           flavor: latest=auto
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{raw}}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{raw}},enable=${{ github.event_name == 'push' }}
+            type=raw,value=nightly,enable=${{ github.event_name == 'schedule' }}
 
       - name: Set up ARM64 emulation
         uses: docker/setup-qemu-action@v4
@@ -111,7 +114,7 @@ jobs:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build and publish release image
+      - name: Build and publish image
         uses: docker/build-push-action@v7
         with:
           context: .

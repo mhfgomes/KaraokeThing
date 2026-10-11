@@ -75,6 +75,8 @@ Pushing a Git tag matching `v*.*.*` runs the source checks and Docker smoke test
 
 Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:1.2.3`, `:v1.2.3`, and `:latest`. Prereleases such as `v1.2.3-rc.1` publish both version tags and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
 
+Every day at **03:17 UTC**, the same workflow checks and builds the default branch (`master`) and publishes `your-account/karaokething:nightly` for AMD64 and ARM64. Nightly publishing requires both CI jobs to pass and does not update `latest`. The schedule becomes active when the workflow is on the default branch.
+
 ```sh
 git tag v1.2.3
 git push origin v1.2.3
