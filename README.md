@@ -67,7 +67,7 @@ Verified with Docker Desktop's Linux ARM64 runtime: image build, model download 
 
 ### Publishing to Docker Hub
 
-The workflows have separate entry points: **CI** (`ci.yml`) checks pushes to `main` or `master` and pull requests; **Docker Release** (`release.yml`) publishes on `v*.*.*` tags; **Docker Nightly** (`nightly.yml`) publishes scheduled or manually requested builds. Both publishing workflows reuse CI and the shared `publish-docker.yml` workflow. Publishing waits for the source checks and Docker smoke test, and builds for `linux/amd64` and `linux/arm64`. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
+The workflows have separate entry points: **CI** (`ci.yml`) checks pushes to `main` or `master` and pull requests; **Docker Release** (`release.yml`) publishes on `v*.*.*` tags; **Docker Nightly** (`nightly.yml`) publishes scheduled or manually requested builds. Both publishing workflows reuse CI and the shared `publish-docker.yml` workflow. Publishing waits for the source checks and Docker smoke test, and builds for `linux/amd64` and `linux/arm64`. Each architecture builds in parallel on a native Ubuntu runner with its own build cache. A final job combines the image digests and updates the published tags only after both builds succeed. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
 
 - Variable `DOCKERHUB_USERNAME`: the Docker Hub account used to log in.
 - Variable `DOCKERHUB_IMAGE`: the complete image name, such as `your-account/karaokething` (an organization namespace can also be used).

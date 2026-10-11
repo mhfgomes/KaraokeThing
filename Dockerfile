@@ -28,7 +28,8 @@ RUN curl -fsSL https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz -o source.tar.xz 
     && make -j"$(nproc)" \
     && make install \
     && mkdir -p /opt/ffmpeg/licenses \
-    && cp COPYING.LGPLv2.1 LICENSE.md /opt/ffmpeg/licenses/
+    && cp COPYING.LGPLv2.1 LICENSE.md /opt/ffmpeg/licenses/ \
+    && rm -rf /tmp/ffmpeg
 
 FROM base AS dependencies
 RUN npm install --global pnpm@12.10.1
