@@ -44,7 +44,7 @@ function StemStrip({ title, accent, gain, muted, onGain, onMute, note, error }: 
   return (
     <Strip title={title} accent={accent}>
       <div className="flex items-center gap-2">
-        <button className={`btn btn-icon btn-sm ${muted ? 'btn-danger' : ''}`} onClick={() => onMute(!muted)} aria-pressed={muted} aria-label={`${muted ? 'Unmute' : 'Mute'} ${title.toLowerCase()}`}>
+        <button className={`btn btn-icon btn-sm ${muted ? 'btn-danger' : ''}`} onClick={() => onMute(!muted)} aria-pressed={muted} aria-label={`Mute ${title.toLowerCase()}`}>
           {muted ? <VolumeX size={16} /> : <Volume2 size={16} />}
         </button>
         <Slider label={`${title} volume`} value={gain} max={1.5} step={0.01} onChange={onGain} color={accent} valueText={`${Math.round(gain * 100)} percent`} />
@@ -65,7 +65,7 @@ function MicStrip({ engine, snap, index, accent }: { engine: AudioEngine; snap: 
     <Strip title={`Microphone ${n}`} accent={accent}>
       <div className="space-y-2">
         <div>
-          <label className="lbl" htmlFor={`${idPrefix}-dev`}>Input device</label>
+          <label className="lbl" htmlFor={`${idPrefix}-dev`}>Input device<span className="sr-only"> for microphone {n}</span></label>
           <select id={`${idPrefix}-dev`} className="field" value={m.deviceId} onChange={(e) => engine.setMicDevice(index, e.target.value)}>
             <option value="">System default input</option>
             {!knownDevice && <option value={m.deviceId}>Previously selected input (not found)</option>}
@@ -73,7 +73,7 @@ function MicStrip({ engine, snap, index, accent }: { engine: AudioEngine; snap: 
           </select>
         </div>
         <div>
-          <label className="lbl" htmlFor={`${idPrefix}-mode`}>Channels</label>
+          <label className="lbl" htmlFor={`${idPrefix}-mode`}>Channels<span className="sr-only"> for microphone {n}</span></label>
           <select id={`${idPrefix}-mode`} className="field" value={m.mode} onChange={(e) => engine.setMicMode(index, e.target.value as ChannelMode)}>
             {MODES.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
@@ -87,10 +87,11 @@ function MicStrip({ engine, snap, index, accent }: { engine: AudioEngine; snap: 
               <Mic size={14} /> {m.status === 'error' ? 'Try again' : 'Turn on'}
             </button>
           )}
-          <button className="btn btn-sm" aria-pressed={m.muted} onClick={() => engine.setMicMuted(index, !m.muted)} disabled={!on}>
+          {/* Fixed names; aria-pressed carries the state the visible text shows. */}
+          <button className="btn btn-sm" aria-pressed={m.muted} aria-label={`Mute microphone ${n}`} onClick={() => engine.setMicMuted(index, !m.muted)} disabled={!on}>
             {m.muted ? <VolumeX size={14} /> : <Volume2 size={14} />} {m.muted ? 'Muted' : 'Mute'}
           </button>
-          <button className={`btn btn-sm ${m.monitor ? 'btn-primary' : ''}`} aria-pressed={m.monitor} onClick={() => engine.setMicMonitor(index, !m.monitor)} disabled={!on}>
+          <button className={`btn btn-sm ${m.monitor ? 'btn-primary' : ''}`} aria-pressed={m.monitor} aria-label={`Hear microphone ${n}`} onClick={() => engine.setMicMonitor(index, !m.monitor)} disabled={!on}>
             <Headphones size={14} /> Hear it: {m.monitor ? 'on' : 'off'}
           </button>
         </div>

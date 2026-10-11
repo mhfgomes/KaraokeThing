@@ -190,12 +190,17 @@ dialog.modal::backdrop { background: rgb(10 5 22 / .75); backdrop-filter: blur(3
 @keyframes sway-a { from { transform: rotate(-14deg); } to { transform: rotate(12deg); } }
 @keyframes sway-b { from { transform: rotate(10deg); } to { transform: rotate(-16deg); } }
 
-.lyric { font-family: var(--font-display); font-weight: 800; line-height: 1.02; letter-spacing: .005em; text-wrap: balance; text-align: center; }
+/* 1.12 leaves room for descenders under line-clamp's overflow clip */
+.lyric { font-family: var(--font-display); font-weight: 800; line-height: 1.12; letter-spacing: .005em; text-wrap: balance; text-align: center; }
+/* fixed two-row slot: the current line never moves as lines change length */
+.lyric-now-slot { display: flex; align-items: center; justify-content: center; height: calc(2.24 * clamp(2.1rem, 7.4cqw, 6.2rem)); }
 .lyric-now { font-size: clamp(2.1rem, 7.4cqw, 6.2rem); color: #fff; text-shadow: 0 2px 30px rgb(117 86 232 / .7); }
+.lyric-now.lyric-long { font-size: clamp(1.4rem, 4.9cqw, 4.1rem); }
 .lyric-next { font-size: clamp(1.4rem, 3.6cqw, 3rem); color: rgb(244 240 255 / .72); font-weight: 700; }
 .lyric-prev { font-size: clamp(1.1rem, 2.6cqw, 2.1rem); color: rgb(244 240 255 / .5); font-weight: 600; }
-.w { display: inline-block; white-space: pre; position: relative; }
-.w-fill { background: linear-gradient(90deg, var(--color-gold) var(--p, 0%), #fff var(--p, 0%)); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.w { display: inline-block; position: relative; }
+/* an inherited shadow would paint through the transparent clipped text and tint it */
+.w-fill { background: linear-gradient(90deg, var(--color-gold) var(--p, 0%), #fff var(--p, 0%)); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; text-shadow: none; filter: drop-shadow(0 0 12px rgb(255 212 101 / .35)); }
 .w-done { color: var(--color-gold); text-shadow: 0 0 24px rgb(255 212 101 / .45); }
 .line-now { color: var(--color-gold); text-shadow: 0 0 36px rgb(255 212 101 / .5), 0 2px 30px rgb(117 86 232 / .6); }
 .lyric-line-enter { animation: line-in .28s ease-out; }
