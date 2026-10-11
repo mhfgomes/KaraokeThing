@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ListMusic, LogIn, LogOut, Mic2, Music2, SlidersHorizontal, Tv2 } from 'lucide-react';
+import { AlertTriangle, ListMusic, LogIn, LogOut, Mic2, Music2, SlidersHorizontal, Tv2 } from 'lucide-react';
 import { AudioEngine, LoadAbortedError } from '@/lib/audio-engine';
 import {
   api, ApiError, authAction, fetchState, isLeaseLost, newControllerId, patchTrack, queueRemove, queueReorder, releaseOnExit, session,
@@ -15,7 +15,7 @@ import { Mixer } from './mixer';
 import { QueuePanel } from './queue-panel';
 import { Stage } from './stage';
 import { AddToQueueDialog, TrackDialog } from './track-dialogs';
-import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ErrorNote, Modal } from './ui-bits';
 
 const PAGE_SIZE = 25;
@@ -332,7 +332,10 @@ export function KaraokeApp() {
     const onKey = (e: KeyboardEvent) => {
       if (!admin || !now || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
-      if (el && (/^(INPUT|SELECT|TEXTAREA|BUTTON|A)$/.test(el.tagName) || el.isContentEditable)) return;
+      if (e.defaultPrevented || (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable))) return;
+      // Buttons and links keep Space/Enter; arrows still seek after a click, except in widgets that use them.
+      if ((e.key === ' ' || e.key === 'Enter') && el?.closest('button, a, [role="button"]')) return;
+      if (e.key.startsWith('Arrow') && el?.closest('[role="tab"], [role="slider"], [role="listbox"], [role="menu"], [role="radiogroup"]')) return;
       if (document.querySelector('[role="dialog"]')) return;
       if (e.key === ' ' || e.key === 'k') { e.preventDefault(); void onPlayPause(); }
       else if (e.key === 'ArrowRight') engine.seek(engine.getPosition() + 5);
@@ -425,6 +428,12 @@ export function KaraokeApp() {
   const libraryEmpty = state.total === 0 && !dq.trim() && !favoritesOnly;
   const offset = nowTrack ? (offsetDraft?.id === nowTrack.id ? offsetDraft.value : nowTrack.lyricOffset) : 0;
   const singers = Array.from(new Set(queue.map((e) => e.singer)));
+  // The mixer tab only exists for the host; fall back to the stage once host access is gone.
+  const shown: View = !admin && view === 'mixer' ? 'stage' : view;
+  const goAdd = () => { setLeftTab('add'); setView('library'); };
+  const w = state.worker;
+  // Why songs sit at "Waiting"; the full reason is in the Add songs tab.
+  const workerIssue = !w.online ? 'Worker offline' : w.modelError ? 'Separation model failed' : !w.modelReady ? 'Separation model not ready' : null;
 
   const idle = (
     <div>
@@ -442,9 +451,9 @@ export function KaraokeApp() {
       {admin && (
         <div className="mt-4 flex flex-wrap justify-center gap-2">
           {libraryEmpty ? (
-            <Button className="btn btn-primary" onClick={() => { setLeftTab('add'); setView('library'); }}>Add songs</Button>
+            <button className="btn btn-primary" onClick={goAdd}>Add songs</button>
           ) : first && firstTrack?.status === 'ready' && !startBlockReason ? (
-            <Button className="btn btn-primary h-auto max-w-full" style={{ whiteSpace: 'normal' }} onClick={startNext}>Start {first.singer}’s song</Button>
+            <button className="btn btn-primary max-w-full" onClick={startNext}>Start {first.singer}’s song</button>
           ) : null}
         </div>
       )}
@@ -454,20 +463,29 @@ export function KaraokeApp() {
   const notice = (
     <>
       {playError && <ErrorNote>{playError}</ErrorNote>}
-      {leaseWarning && <ErrorNote tone="warn">{leaseWarning}</ErrorNote>}
       {ended && (
         <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-black/40 px-3 py-2 text-sm">
           <span>Song finished. Nothing starts until you choose.</span>
           {admin && first && firstTrack?.status === 'ready' && !startBlockReason && (
-            <Button className="btn btn-primary btn-sm h-auto max-w-full" style={{ whiteSpace: 'normal' }} onClick={startNext}>Start {first.singer}’s song</Button>
+            <button className="btn btn-primary btn-sm max-w-full" onClick={startNext}>Start {first.singer}’s song</button>
           )}
         </div>
       )}
     </>
   );
 
+  const library = (
+    <LibraryPanel
+      tracks={state.tracks} total={state.total} page={page} pageSize={PAGE_SIZE}
+      q={q} onQ={(v) => { setQ(v); setPage(1); }} favoritesOnly={favoritesOnly} onFavoritesOnly={(v) => { setFavoritesOnly(v); setPage(1); }}
+      onPage={setPage} admin={admin} loaded playingId={now?.trackId ?? active?.trackId ?? null}
+      playDisabledReason={startBlockReason} onPlay={(t) => void startTrack(t)} onQueue={setQueueTrack}
+      onEdit={(t) => setEditId(t.id)} onFavorite={(t) => void toggleFavorite(t)} onGoAdd={() => setLeftTab('add')}
+    />
+  );
+
   const navBtn = (v: View, label: string, icon: React.ReactNode) => (
-    <button key={v} className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-bold ${view === v ? 'text-gold' : 'text-white/70'}`} aria-current={view === v ? 'page' : undefined} onClick={() => setView(v)}>
+    <button key={v} className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs font-bold ${shown === v ? 'text-gold' : 'text-white/70'}`} aria-current={shown === v ? 'page' : undefined} onClick={() => setView(v)}>
       {icon}{label}
     </button>
   );
@@ -478,45 +496,54 @@ export function KaraokeApp() {
         <span className="brand-mark" aria-hidden><Mic2 size={18} /></span>
         <h1 className="font-display text-3xl font-extrabold leading-none tracking-wide">KaraokeThing</h1>
         <div className="ml-auto flex items-center gap-2">
-          {admin && state.worker.processing && <span className="chip chip-gold hidden sm:inline-flex">Preparing a song</span>}
-          {admin && !state.worker.online && <span className="chip chip-coral hidden sm:inline-flex">Worker offline</span>}
+          {admin && w.processing && <span className="chip chip-gold hidden sm:inline-flex">Preparing a song</span>}
+          {admin && workerIssue && (
+            <button className={`chip ${w.online ? 'chip-gold' : 'chip-coral'} hidden hover:bg-white/10 sm:inline-flex`} onClick={goAdd} title="Songs wait until this is fixed. Open Add songs for details.">
+              <AlertTriangle size={12} aria-hidden />{workerIssue}
+            </button>
+          )}
           <span className="hidden text-sm text-muted-foreground sm:inline">{admin ? 'Host' : 'Viewing only'}</span>
           {admin ? (
-            <Button className="btn btn-sm" onClick={signOut}><LogOut size={14} /> Sign out</Button>
+            <button className="btn btn-sm" onClick={signOut}><LogOut size={14} /> Sign out</button>
           ) : (
-            <Button className="btn btn-sm btn-primary" onClick={() => setLoginOpen(true)}><LogIn size={14} /> Host sign in</Button>
+            <button className="btn btn-sm btn-primary" onClick={() => setLoginOpen(true)}><LogIn size={14} /> Host sign in</button>
           )}
         </div>
       </header>
+      {/* No room for the chip on phones: a slim banner instead. */}
+      {admin && workerIssue && (
+        <button className={`flex items-center gap-1.5 border-b border-white/10 bg-[#33280f] px-4 py-1.5 text-left text-xs font-bold sm:hidden ${w.online ? 'text-gold' : 'text-[#ff8da6]'}`} onClick={goAdd}>
+          <AlertTriangle size={14} className="shrink-0" aria-hidden />{workerIssue}: songs stay at Waiting. Details
+        </button>
+      )}
 
-      {offline && <div className="px-3 pt-2"><ErrorNote tone="warn">Lost contact with the host: {offline} Showing the last data received; retrying every few seconds.</ErrorNote></div>}
-      {signedOutNote && !admin && <div className="px-3 pt-2"><ErrorNote tone="warn">{signedOutNote} <button className="underline" onClick={() => setSignedOutNote('')}>Dismiss</button></ErrorNote></div>}
-      {queueError && <div className="px-3 pt-2"><ErrorNote>{queueError} <button className="underline" onClick={() => setQueueError('')}>Dismiss</button></ErrorNote></div>}
+      {/* Overlaid under the header so connection hiccups don't shove the stage around. */}
+      <div className="pointer-events-none fixed inset-x-0 top-16 z-30 mx-auto flex max-w-xl flex-col gap-2 px-3 [&>*]:pointer-events-auto [&>*]:shadow-lg [&>*]:shadow-black/40">
+        {offline && <ErrorNote tone="warn">Lost contact with the host: {offline} Showing the last data received; retrying every few seconds.</ErrorNote>}
+        {leaseWarning && <ErrorNote tone="warn">{leaseWarning}</ErrorNote>}
+        {signedOutNote && !admin && <ErrorNote tone="warn">{signedOutNote} <button className="underline" onClick={() => setSignedOutNote('')}>Dismiss</button></ErrorNote>}
+        {queueError && <ErrorNote>{queueError} <button className="underline" onClick={() => setQueueError('')}>Dismiss</button></ErrorNote>}
+      </div>
 
-      <main className="grid min-h-0 flex-1 gap-3 p-3 pb-16 lg:grid-cols-[21rem_minmax(0,1fr)_20rem] lg:pb-3">
-        <aside aria-label="Library" className={`${view === 'library' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:flex`}>
-          {admin && (
-            <div className="grid grid-cols-2 gap-1 rounded-xl bg-black/30 p-1" role="tablist" aria-label="Library sections">
-              {(['songs', 'add'] as const).map((t) => (
-                <button key={t} role="tab" aria-selected={leftTab === t} className={`btn btn-sm border-0 ${leftTab === t ? 'btn-violet' : 'btn-ghost'}`} onClick={() => setLeftTab(t)}>{t === 'songs' ? 'Songs' : 'Add songs'}</button>
-              ))}
-            </div>
-          )}
-          {/* Stays mounted while hidden so uploads keep their progress across tab switches. */}
-          {admin && <div className={leftTab === 'add' ? 'contents' : 'hidden'}><AdminPanel state={state} onChanged={() => void refresh()} /></div>}
-          {!(admin && leftTab === 'add') && (
-            <LibraryPanel
-              tracks={state.tracks} total={state.total} page={page} pageSize={PAGE_SIZE}
-              q={q} onQ={(v) => { setQ(v); setPage(1); }} favoritesOnly={favoritesOnly} onFavoritesOnly={(v) => { setFavoritesOnly(v); setPage(1); }}
-              onPage={setPage} admin={admin} loaded playingId={now?.trackId ?? active?.trackId ?? null}
-              playDisabledReason={startBlockReason} onPlay={(t) => void startTrack(t)} onQueue={setQueueTrack}
-              onEdit={(t) => setEditId(t.id)} onFavorite={(t) => void toggleFavorite(t)} onGoAdd={() => setLeftTab('add')}
-            />
-          )}
+      {/* Below xl the stage gets the wide column and the library sits above the queue on the right. */}
+      <main className="grid min-h-0 flex-1 gap-3 p-3 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:pb-3 xl:grid-cols-[21rem_minmax(0,1fr)_20rem] xl:grid-rows-[minmax(0,1fr)]">
+        <aside aria-label="Library" className={`${shown === 'library' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:col-start-2 lg:row-start-1 lg:flex xl:col-start-1`}>
+          {admin ? (
+            <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as 'songs' | 'add')} className="min-h-0 flex-1 gap-3">
+              <TabsList aria-label="Library sections" className="grid w-full grid-cols-2 gap-1 rounded-xl bg-black/30 p-1 group-data-horizontal/tabs:h-auto">
+                {(['songs', 'add'] as const).map((t) => (
+                  <TabsTrigger key={t} value={t} className="min-h-8 rounded-lg font-bold text-white/75 pointer-coarse:min-h-10 dark:data-active:border-transparent dark:data-active:bg-violet dark:data-active:text-white">{t === 'songs' ? 'Songs' : 'Add songs'}</TabsTrigger>
+                ))}
+              </TabsList>
+              <TabsContent value="songs" className="flex min-h-0 flex-col">{library}</TabsContent>
+              {/* keepMounted so uploads keep their progress across tab switches. */}
+              <TabsContent value="add" keepMounted className="flex min-h-0 flex-col"><AdminPanel state={state} onChanged={() => void refresh()} /></TabsContent>
+            </Tabs>
+          ) : library}
         </aside>
 
-        <div className={`${view === 'stage' || view === 'mixer' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:flex`}>
-          <div className={`${view === 'stage' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex`}>
+        <div className={`${shown === 'stage' || shown === 'mixer' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:flex xl:col-start-2 xl:row-span-1`}>
+          <div className={`${shown === 'stage' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex`}>
             <Stage
               engine={engine} snap={snap} track={nowTrack} singer={now?.singer ?? null} nextUp={nextUp}
               canControl={admin && !!now} offset={offset} onOffset={onOffset} onPlayPause={() => void onPlayPause()} onStop={() => void endSong()}
@@ -524,7 +551,7 @@ export function KaraokeApp() {
             />
           </div>
           {admin && (
-            <div className={`${view === 'mixer' ? 'block' : 'hidden'} min-h-0 lg:block`}>
+            <div className={`${shown === 'mixer' ? 'block' : 'hidden'} min-h-0 lg:block`}>
               <button className="btn btn-sm mb-2 hidden lg:inline-flex" aria-expanded={mixerOpen} onClick={() => setMixerOpen((v) => !v)}>
                 <SlidersHorizontal size={14} /> {mixerOpen ? 'Hide mixer' : 'Show mixer'}
               </button>
@@ -533,7 +560,7 @@ export function KaraokeApp() {
           )}
         </div>
 
-        <aside aria-label="Singer queue" className={`${view === 'queue' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:flex`}>
+        <aside aria-label="Singer queue" className={`${shown === 'queue' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:col-start-2 lg:row-start-2 lg:flex lg:max-h-[40dvh] xl:col-start-3 xl:row-start-1 xl:max-h-none`}>
           <h2 className="flex items-baseline gap-2 font-display text-2xl font-bold tracking-wide">Singer queue{queue.length > 0 && <span className="text-base font-semibold text-muted-foreground">{queue.length} waiting</span>}</h2>
           <div className="scroll-thin min-h-0 flex-1 overflow-y-auto pr-1">
             <QueuePanel
@@ -546,7 +573,7 @@ export function KaraokeApp() {
         </aside>
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-white/10 bg-plum-950/95 backdrop-blur lg:hidden" aria-label="Sections">
+      <nav className="fixed inset-x-0 bottom-0 z-20 flex border-t border-white/10 bg-plum-950/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden" aria-label="Sections">
         {navBtn('stage', 'Stage', <Music2 size={18} />)}
         {navBtn('library', 'Library', <ListMusic size={18} />)}
         {navBtn('queue', 'Queue', <Mic2 size={18} />)}
