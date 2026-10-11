@@ -3,7 +3,6 @@
 import { type ReactNode } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import type { Track } from '@/lib/types';
-import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { Slider as UiSlider } from '@/components/ui/slider';
 
@@ -12,15 +11,15 @@ export function Modal({ open, onClose, title, description, children, wide }: { o
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <DialogContent
         showCloseButton={false}
-        className="modal flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
+        className="flex max-h-[calc(100dvh-2rem)] flex-col gap-0 p-0 sm:max-w-lg"
         style={wide ? { width: 'min(56rem, calc(100vw - 1.5rem))', maxWidth: 'calc(100vw - 1.5rem)' } : undefined}
       >
         <div className="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
           <div className="min-w-0">
             <DialogTitle className="font-display text-2xl font-bold leading-tight tracking-wide">{title}</DialogTitle>
-            <DialogDescription className="sr-only">{description ?? `${title} dialog`}</DialogDescription>
+            {description && <DialogDescription className="sr-only">{description}</DialogDescription>}
           </div>
-          <DialogClose render={<Button variant="ghost" size="icon" className="btn btn-ghost btn-icon" aria-label="Close dialog" />}><X size={18} /></DialogClose>
+          <DialogClose className="btn btn-ghost btn-icon" aria-label="Close dialog"><X size={18} /></DialogClose>
         </div>
         <div className="scroll-thin overflow-y-auto px-5 py-4">{children}</div>
       </DialogContent>
@@ -28,10 +27,10 @@ export function Modal({ open, onClose, title, description, children, wide }: { o
   );
 }
 
-export function ErrorNote({ children, tone = 'error' }: { children: ReactNode; tone?: 'error' | 'warn' }) {
+export function ErrorNote({ children, tone = 'error', id }: { children: ReactNode; tone?: 'error' | 'warn'; id?: string }) {
   if (!children) return null;
   return (
-    <div role={tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${tone === 'error' ? 'border-[#ff7a7a66] bg-[#3a1226] text-[#ffd6dc]' : 'border-gold/40 bg-[#33280f] text-[#ffe9ab]'}`}>
+    <div id={id} role={tone === 'error' ? 'alert' : 'status'} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${tone === 'error' ? 'border-[#ff7a7a66] bg-[#3a1226] text-[#ffd6dc]' : 'border-gold/40 bg-[#33280f] text-[#ffe9ab]'}`}>
       <AlertTriangle size={16} className="mt-0.5 shrink-0" aria-hidden />
       <div className="min-w-0 break-words">{children}</div>
     </div>

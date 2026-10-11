@@ -15,6 +15,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#160f29",
   colorScheme: "dark",
+  // Lets the fixed bottom nav pad itself clear of the iPhone home indicator via env(safe-area-inset-bottom).
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
