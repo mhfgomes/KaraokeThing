@@ -65,6 +65,21 @@ Restart with `docker compose up -d` after changing configuration. Allow at least
 
 Verified with Docker Desktop's Linux ARM64 runtime: image build, model download and graph loading, API and worker health, real CPU inference, exclusive library locking, crash recovery, and graceful shutdown with persistent data. Linux x86_64 containers have not yet been exercised.
 
+### Publishing to Docker Hub
+
+Pushing a Git tag matching `v*.*.*` runs the source checks and Docker smoke test, then publishes a multi-platform image for `linux/amd64` and `linux/arm64`. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
+
+- Variable `DOCKERHUB_USERNAME`: the Docker Hub account used to log in.
+- Variable `DOCKERHUB_IMAGE`: the complete image name, such as `your-account/karaokething` (an organization namespace can also be used).
+- Secret `DOCKERHUB_TOKEN`: a Docker Hub access token with write access to that repository.
+
+Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:1.2.3`, `:v1.2.3`, and `:latest`. Prereleases such as `v1.2.3-rc.1` publish both version tags and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
+
+```sh
+git tag v1.2.3
+git push origin v1.2.3
+```
+
 ## Use
 
 - Add MP3, WAV, FLAC, M4A, or OGG files through **Add songs**. Files must be nonempty, at most 250 MB, and at most 30 minutes long. Tags populate the title and artist where available; otherwise edit them in **Details**. Identical files are skipped.
