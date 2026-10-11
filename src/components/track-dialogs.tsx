@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw, Search, Trash2 } from 'lucide-react';
 import type { AppState, LyricMatch, Track } from '@/lib/types';
 import {
-  deleteTrack, fetchState, formatBytes, formatTime, lookupLyric, lyricMatches, patchTrack, prepareTrack, selectLyric, queueAdd, alignTrackLyrics, type Quality,
+  deleteTrack, formatBytes, formatTime, lookupLyric, lyricMatches, patchTrack, prepareTrack, selectLyric, queueAdd, alignTrackLyrics, type Quality,
 } from '@/lib/client-api';
 import { ErrorNote, LyricsChip, Modal, StatusChip } from './ui-bits';
 
@@ -54,7 +54,7 @@ function AddBody({ track, singers, onClose, onAdded }: { track: Track; singers: 
 type Worker = AppState['worker'];
 type Msg = { ok?: string; err?: string };
 
-export function TrackDialog({ track, activeTrackId, wordAlignmentEnabled = false, worker, onClose, onChanged }: { track: Track | null; activeTrackId: string | null; wordAlignmentEnabled?: boolean; worker?: Worker; onClose: () => void; onChanged: () => void }) {
+export function TrackDialog({ track, activeTrackId, wordAlignmentEnabled = false, worker, onClose, onChanged }: { track: Track | null; activeTrackId: string | null; wordAlignmentEnabled?: boolean; worker: Worker; onClose: () => void; onChanged: () => void }) {
   // The Modal only exposes onClose, so unsaved edits are guarded here; a controlled dialog stays open if we skip onClose.
   const dirty = useRef(false);
   const close = () => { if (dirty.current && !window.confirm('Discard unsaved changes to this song’s details?')) return; dirty.current = false; onClose(); };
@@ -65,15 +65,14 @@ export function TrackDialog({ track, activeTrackId, wordAlignmentEnabled = false
   );
 }
 
-function waitReason(w: Worker | null) {
-  if (!w) return 'Waiting for the preparation worker.';
+function waitReason(w: Worker) {
   if (!w.online) return 'Waiting — the preparation worker is offline.';
   if (w.modelError) return 'Waiting — separation model not installed.';
   if (!w.modelReady) return 'Waiting — separation model is still being prepared.';
   return 'Waiting in line — preparation starts after the songs ahead of it.';
 }
 
-function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, onClose, onChanged }: { track: Track; isActive: boolean; wordAlignmentEnabled: boolean; worker?: Worker; dirtyRef: React.RefObject<boolean>; onClose: () => void; onChanged: () => void }) {
+function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, onClose, onChanged }: { track: Track; isActive: boolean; wordAlignmentEnabled: boolean; worker: Worker; dirtyRef: React.RefObject<boolean>; onClose: () => void; onChanged: () => void }) {
   const [title, setTitle] = useState(track.title);
   const [artist, setArtist] = useState(track.artist);
   const [album, setAlbum] = useState(track.album);
@@ -85,13 +84,11 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, on
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteErr, setDeleteErr] = useState('');
-  const [fetchedWorker, setFetchedWorker] = useState<Worker | null>(null);
   const dirty = title !== track.title || artist !== track.artist || album !== track.album;
   const titleErr = !title.trim();
   const working = track.status === 'queued' || track.status === 'running';
   const aligning = track.alignment?.status === 'queued' || track.alignment?.status === 'running';
   const needsWords = track.lyrics.lines.some(line => line.text.trim() && !line.words?.length);
-  const w = worker ?? fetchedWorker;
   const matchesRef = useRef<HTMLUListElement>(null);
   const focusMatches = useRef(false);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -104,13 +101,6 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, on
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   useEffect(() => { dirtyRef.current = dirty; }, [dirty, dirtyRef]);
-  useEffect(() => {
-    // The dialog is not handed the app state, so look up why a queued song is waiting.
-    if (worker || track.status !== 'queued') return;
-    const ac = new AbortController();
-    fetchState('', false, 1, 1, ac.signal).then((s) => setFetchedWorker(s.worker), () => {});
-    return () => ac.abort();
-  }, [worker, track.status]);
   useEffect(() => {
     if (matches?.length && focusMatches.current) { focusMatches.current = false; matchesRef.current?.focus(); }
   }, [matches]);
@@ -174,7 +164,7 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, on
         </div>
         {track.status === 'queued' && (
           <p role="status" className="text-sm text-muted-foreground">
-            {waitReason(w)}{w?.online && w.modelError && <span className="mt-0.5 block text-xs">{w.modelError} The song is kept and starts once the model is ready.</span>}
+            {waitReason(worker)}{worker.online && worker.modelError && <span className="mt-0.5 block text-xs">{worker.modelError} The song is kept and starts once the model is ready.</span>}
           </p>
         )}
         {track.status === 'running' && (
