@@ -29,8 +29,13 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
   const [importResult, setImportResult] = useState<IngestResult | null>(null);
   const [importErr, setImportErr] = useState('');
 
-  const [pw, setPw] = useState({ cur: '', next: '' });
+  const [pw, setPw] = useState({ cur: '', next: '', again: '' });
   const [pwMsg, setPwMsg] = useState<{ ok?: string; err?: string }>({});
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwChecked, setPwChecked] = useState(false);
+  // Same 8-character minimum as the setup screen.
+  const pwShort = pwChecked && pw.next.length < 8;
+  const pwMismatch = (pwChecked || pw.again.length >= pw.next.length) && !!pw.again && pw.again !== pw.next;
 
   const patchItem = (id: number, p: Partial<Item>) => setItems((xs) => xs.map((x) => (x.id === id ? { ...x, ...p } : x)));
 
@@ -78,9 +83,24 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
 
   const changePw = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPwMsg({});
-    try { await authAction('password', pw.cur, pw.next); setPwMsg({ ok: 'Password changed.' }); setPw({ cur: '', next: '' }); } catch (err) { setPwMsg({ err: msg(err) }); }
+    if (pwBusy) return;
+    setPwChecked(true); setPwMsg({});
+    if (pw.next.length < 8 || pw.next !== pw.again) return;
+    setPwBusy(true);
+    try {
+      await authAction('password', pw.cur, pw.next);
+      setPwMsg({ ok: 'Password changed. Use the new password the next time you sign in.' }); setPw({ cur: '', next: '', again: '' }); setPwChecked(false);
+    } catch (err) { setPwMsg({ err: msg(err) }); }
+    setPwBusy(false);
   };
+
+  // Failed uploads stay listed however long the batch is; otherwise only the latest 12 are shown.
+  const count = (st: Item['state'][]) => items.filter((x) => st.includes(x.state)).length;
+  const summary = [
+    [count(['done']), 'uploaded'], [count(['error']), 'failed'], [count(['duplicate']), 'duplicate'], [count(['waiting', 'uploading']), 'in progress'],
+  ].filter(([n]) => n).map(([n, l]) => `${n} ${l}`).join(' · ');
+  const recent = new Set(items.filter((x) => x.state !== 'error').slice(-12).map((x) => x.id));
+  const shown = items.filter((x) => x.state === 'error' || recent.has(x.id));
 
   const w = state.worker;
   return (
@@ -105,18 +125,19 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
         <div
           className={`rounded-xl border-2 border-dashed p-5 text-center transition-colors ${dragging ? 'border-gold bg-gold/10' : 'border-white/25'}`}
           onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragLeave={() => setDragging(false)}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }}
           onDrop={(e) => { e.preventDefault(); setDragging(false); void start(Array.from(e.dataTransfer.files)); }}
         >
           <Upload className="mx-auto mb-2 text-violet-soft" aria-hidden />
           <p className="text-sm">Drop MP3, WAV, FLAC, M4A, or OGG files here</p>
-          <input ref={inputRef} type="file" multiple accept=".mp3,.wav,.flac,.m4a,.ogg,audio/*" className="sr-only" id="ad-files" onChange={(e) => { void start(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
-          <button className="btn btn-primary mt-3" onClick={() => inputRef.current?.click()}>Choose files</button>
+          <input ref={inputRef} type="file" multiple accept=".mp3,.wav,.flac,.m4a,.ogg,audio/*"  hidden tabIndex={-1} aria-hidden id="ad-files" onChange={(e) => { void start(Array.from(e.target.files ?? [])); e.target.value = ''; }} />
+          <button type="button" className="btn btn-primary mt-3" onClick={() => inputRef.current?.click()}>Choose files</button>
         </div>
         {items.length > 0 && (
           <>
+            <p role="status" className="text-sm font-bold">{summary}</p>
             <ul className="space-y-1.5" aria-label="Uploads">
-              {items.slice(-12).map((it) => (
+              {shown.map((it) => (
                 <li key={it.id} className="rounded-lg bg-black/20 p-2 text-sm">
                   <div className="flex justify-between gap-2">
                     <span className="truncate">{it.name}</span>
@@ -129,6 +150,7 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
                 </li>
               ))}
             </ul>
+            {shown.length < items.length && <p className="text-xs text-muted-foreground">{items.length - shown.length} earlier upload{items.length - shown.length === 1 ? '' : 's'} not shown.</p>}
             <div className="flex gap-2">
               {busyUploading && <button className="btn btn-sm" onClick={() => abort.current?.abort()}>Cancel remaining</button>}
               <button className="btn btn-sm btn-ghost" onClick={() => setItems((xs) => xs.filter((x) => x.state === 'uploading' || x.state === 'waiting'))}>Clear finished</button>
@@ -166,8 +188,17 @@ export function AdminPanel({ state, onChanged }: { state: AppState; onChanged: (
         <p className="text-sm text-muted-foreground">Library storage: {formatBytes(state.storageBytes)}. Worker: {w.online ? (w.processing ? 'busy preparing a song' : 'idle') : 'offline'}.</p>
         <form onSubmit={changePw} className="space-y-2">
           <div><label className="lbl" htmlFor="pw-cur">Current password</label><input id="pw-cur" type="password" className="field" autoComplete="current-password" value={pw.cur} onChange={(e) => setPw({ ...pw, cur: e.target.value })} /></div>
-          <div><label className="lbl" htmlFor="pw-new">New password</label><input id="pw-new" type="password" className="field" autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} /></div>
-          <button className="btn btn-sm" disabled={!pw.cur || !pw.next}><KeyRound size={13} /> Change password</button>
+          <div>
+            <label className="lbl" htmlFor="pw-new">New password</label>
+            <input id="pw-new" type="password" className="field" autoComplete="new-password" aria-invalid={pwShort} aria-describedby="pw-new-hint" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
+            <p id="pw-new-hint" className={`mt-1 text-xs ${pwShort ? 'text-[#ffb0c0]' : 'text-muted-foreground'}`}>{pwShort ? 'Use at least 8 characters.' : 'At least 8 characters.'}</p>
+          </div>
+          <div>
+            <label className="lbl" htmlFor="pw-again">Repeat new password</label>
+            <input id="pw-again" type="password" className="field" autoComplete="new-password" aria-invalid={pwMismatch} aria-describedby={pwMismatch ? 'pw-again-err' : undefined} value={pw.again} onChange={(e) => setPw({ ...pw, again: e.target.value })} />
+            {pwMismatch && <p id="pw-again-err" className="mt-1 text-xs text-[#ffb0c0]">The new passwords do not match.</p>}
+          </div>
+          <button className="btn btn-sm" disabled={!pw.cur || !pw.next || !pw.again || pwBusy}><KeyRound size={13} /> {pwBusy ? 'Changing…' : 'Change password'}</button>
           {pwMsg.ok && <p role="status" className="text-sm text-mint">{pwMsg.ok}</p>}
           {pwMsg.err && <ErrorNote>{pwMsg.err}</ErrorNote>}
         </form>

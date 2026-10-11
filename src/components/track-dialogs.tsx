@@ -1,10 +1,10 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, RefreshCw, Search, Trash2 } from 'lucide-react';
-import type { LyricMatch, Track } from '@/lib/types';
+import type { AppState, LyricMatch, Track } from '@/lib/types';
 import {
-  deleteTrack, formatBytes, formatTime, lookupLyric, lyricMatches, patchTrack, prepareTrack, selectLyric, queueAdd, alignTrackLyrics, type Quality,
+  deleteTrack, fetchState, formatBytes, formatTime, lookupLyric, lyricMatches, patchTrack, prepareTrack, selectLyric, queueAdd, alignTrackLyrics, type Quality,
 } from '@/lib/client-api';
 import { ErrorNote, LyricsChip, Modal, StatusChip } from './ui-bits';
 
@@ -39,10 +39,10 @@ function AddBody({ track, singers, onClose, onAdded }: { track: Track; singers: 
       <p><span className="font-bold">{track.title}</span> <span className="text-muted-foreground">by {track.artist}</span></p>
       <div>
         <label className="lbl" htmlFor="singer-name">Singer name</label>
-        <input id="singer-name" className="field" value={singer} onChange={(e) => setSinger(e.target.value)} list="recent-singers" autoFocus maxLength={60} autoComplete="off" />
+        <input id="singer-name" className="field" aria-invalid={!!error} aria-describedby={error ? 'singer-err' : undefined} value={singer} onChange={(e) => setSinger(e.target.value)} list="recent-singers" autoFocus maxLength={60} autoComplete="off" />
         <datalist id="recent-singers">{singers.map((s) => <option key={s} value={s} />)}</datalist>
       </div>
-      {error && <ErrorNote>{error}</ErrorNote>}
+      {error && <div id="singer-err"><ErrorNote>{error}</ErrorNote></div>}
       <div className="flex justify-end gap-2">
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
         <button type="submit" className="btn btn-primary" disabled={busy}>Add to queue</button>
@@ -51,59 +51,119 @@ function AddBody({ track, singers, onClose, onAdded }: { track: Track; singers: 
   );
 }
 
-export function TrackDialog({ track, activeTrackId, wordAlignmentEnabled = false, onClose, onChanged }: { track: Track | null; activeTrackId: string | null; wordAlignmentEnabled?: boolean; onClose: () => void; onChanged: () => void }) {
+type Worker = AppState['worker'];
+type Msg = { ok?: string; err?: string };
+
+export function TrackDialog({ track, activeTrackId, wordAlignmentEnabled = false, worker, onClose, onChanged }: { track: Track | null; activeTrackId: string | null; wordAlignmentEnabled?: boolean; worker?: Worker; onClose: () => void; onChanged: () => void }) {
+  // The Modal only exposes onClose, so unsaved edits are guarded here; a controlled dialog stays open if we skip onClose.
+  const dirty = useRef(false);
+  const close = () => { if (dirty.current && !window.confirm('Discard unsaved changes to this song’s details?')) return; dirty.current = false; onClose(); };
   return (
-    <Modal open={!!track} onClose={onClose} title="Song details" wide>
-      {track && <TrackBody key={track.id} track={track} isActive={activeTrackId === track.id} wordAlignmentEnabled={wordAlignmentEnabled} onClose={onClose} onChanged={onChanged} />}
+    <Modal open={!!track} onClose={close} title="Song details" wide>
+      {track && <TrackBody key={track.id} track={track} isActive={activeTrackId === track.id} wordAlignmentEnabled={wordAlignmentEnabled} worker={worker} dirtyRef={dirty} onClose={() => { dirty.current = false; onClose(); }} onChanged={onChanged} />}
     </Modal>
   );
 }
 
-function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }: { track: Track; isActive: boolean; wordAlignmentEnabled: boolean; onClose: () => void; onChanged: () => void }) {
+function waitReason(w: Worker | null) {
+  if (!w) return 'Waiting for the preparation worker.';
+  if (!w.online) return 'Waiting — the preparation worker is offline.';
+  if (w.modelError) return 'Waiting — separation model not installed.';
+  if (!w.modelReady) return 'Waiting — separation model is still being prepared.';
+  return 'Waiting in line — preparation starts after the songs ahead of it.';
+}
+
+function TrackBody({ track, isActive, wordAlignmentEnabled, worker, dirtyRef, onClose, onChanged }: { track: Track; isActive: boolean; wordAlignmentEnabled: boolean; worker?: Worker; dirtyRef: React.RefObject<boolean>; onClose: () => void; onChanged: () => void }) {
   const [title, setTitle] = useState(track.title);
   const [artist, setArtist] = useState(track.artist);
   const [album, setAlbum] = useState(track.album);
   const [quality, setQuality] = useState<Quality>(track.quality);
-  const [saveState, setSaveState] = useState<{ ok?: string; err?: string }>({});
-  const [prepState, setPrepState] = useState<{ ok?: string; err?: string }>({});
-  const [lyricState, setLyricState] = useState<{ ok?: string; err?: string }>({});
+  const [saveState, setSaveState] = useState<Msg>({});
+  const [prepState, setPrepState] = useState<Msg>({});
+  const [lyricState, setLyricState] = useState<Msg>({});
   const [matches, setMatches] = useState<LyricMatch[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleteErr, setDeleteErr] = useState('');
+  const [fetchedWorker, setFetchedWorker] = useState<Worker | null>(null);
   const dirty = title !== track.title || artist !== track.artist || album !== track.album;
+  const titleErr = !title.trim();
   const working = track.status === 'queued' || track.status === 'running';
   const aligning = track.alignment?.status === 'queued' || track.alignment?.status === 'running';
   const needsWords = track.lyrics.lines.some(line => line.text.trim() && !line.words?.length);
+  const w = worker ?? fetchedWorker;
   const matchesRef = useRef<HTMLUListElement>(null);
+  const focusMatches = useRef(false);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const deleteRef = useRef<HTMLButtonElement>(null);
+  const keepRef = useRef<HTMLButtonElement>(null);
+  const confirmWasOpen = useRef(false);
+  const alive = useRef(true);
+  // Synchronous lock: busy state lands a render late, so a fast second click could otherwise start a parallel action.
+  const lock = useRef<string | null>(null);
 
-  const run = async (key: string, fn: () => Promise<void>, set: (s: { ok?: string; err?: string }) => void) => {
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { dirtyRef.current = dirty; }, [dirty, dirtyRef]);
+  useEffect(() => {
+    // The dialog is not handed the app state, so look up why a queued song is waiting.
+    if (worker || track.status !== 'queued') return;
+    const ac = new AbortController();
+    fetchState('', false, 1, 1, ac.signal).then((s) => setFetchedWorker(s.worker), () => {});
+    return () => ac.abort();
+  }, [worker, track.status]);
+  useEffect(() => {
+    if (matches?.length && focusMatches.current) { focusMatches.current = false; matchesRef.current?.focus(); }
+  }, [matches]);
+  useEffect(() => {
+    if (confirmDelete) keepRef.current?.focus();
+    else if (confirmWasOpen.current) deleteRef.current?.focus();
+    confirmWasOpen.current = confirmDelete;
+  }, [confirmDelete]);
+
+  // One action at a time: every mutating button is disabled while any request is in flight.
+  const run = async (key: string, fn: () => Promise<void>, set: (s: Msg) => void) => {
+    if (lock.current) return;
+    lock.current = key;
     setBusy(key);
     set({});
-    try { await fn(); } catch (e) { set({ err: msg(e) }); }
-    setBusy(null);
+    try { await fn(); } catch (e) { if (alive.current) set({ err: msg(e) }); }
+    lock.current = null;
+    if (alive.current) setBusy(null);
     onChanged();
   };
+  const ok = (set: (s: Msg) => void, text: string) => { if (alive.current) set({ ok: text }); };
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (titleErr) { titleRef.current?.focus(); return; }
+    if (!dirty) return;
+    void run('save', async () => { await patchTrack(track.id, { title: title.trim(), artist: artist.trim(), album: album.trim() }); ok(setSaveState, 'Saved.'); }, setSaveState);
+  };
+  const del = () => run('del', async () => {
+    try { await deleteTrack(track.id); } catch (e) { if (alive.current) setDeleteErr(msg(e)); return; }
+    onClose();
+  }, () => setDeleteErr(''));
 
   return (
     <div className="space-y-6">
-      <section aria-labelledby="td-meta" className="space-y-3">
+      <form onSubmit={save} noValidate aria-labelledby="td-meta" className="space-y-3">
         <h3 id="td-meta" className="font-display text-xl font-bold">Title and artist</h3>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div><label className="lbl" htmlFor="td-title">Title</label><input id="td-title" className="field" value={title} onChange={(e) => setTitle(e.target.value)} /></div>
+          <div>
+            <label className="lbl" htmlFor="td-title">Title</label>
+            <input ref={titleRef} id="td-title" className="field" aria-required aria-invalid={titleErr} aria-describedby={titleErr ? 'td-title-err' : undefined} value={title} onChange={(e) => setTitle(e.target.value)} />
+            {titleErr && <p id="td-title-err" className="mt-1 text-xs text-[#ffb0c0]">Title is required.</p>}
+          </div>
           <div><label className="lbl" htmlFor="td-artist">Artist</label><input id="td-artist" className="field" value={artist} onChange={(e) => setArtist(e.target.value)} /></div>
           <div><label className="lbl" htmlFor="td-album">Album</label><input id="td-album" className="field" value={album} onChange={(e) => setAlbum(e.target.value)} /></div>
         </div>
         <p className="text-xs text-muted-foreground">Saving does not remove lyrics already attached. Use the lyric match below to change them.</p>
         <div className="flex items-center gap-3">
-          <button
-            className="btn btn-violet" disabled={!dirty || !title.trim() || busy === 'save'}
-            onClick={() => run('save', async () => { await patchTrack(track.id, { title: title.trim(), artist: artist.trim(), album: album.trim() }); setSaveState({ ok: 'Saved.' }); }, setSaveState)}
-          >Save details</button>
-          {saveState.ok && <span role="status" className="text-sm text-mint">{saveState.ok}</span>}
+          <button type="submit" className="btn btn-violet" disabled={!dirty || (!!busy && busy !== 'save')}>{busy === 'save' ? 'Saving…' : 'Save details'}</button>
+          {dirty && busy !== 'save' && <span className="text-sm text-gold">Unsaved changes</span>}
+          {!dirty && saveState.ok && <span role="status" className="text-sm text-mint">{saveState.ok}</span>}
         </div>
         {saveState.err && <ErrorNote>{saveState.err}</ErrorNote>}
-      </section>
+      </form>
 
       <section aria-labelledby="td-prep" className="space-y-3">
         <h3 id="td-prep" className="font-display text-xl font-bold">Audio preparation</h3>
@@ -112,7 +172,12 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }
           <span className="chip chip-dim">{track.quality === 'high' ? 'Higher quality' : 'Balanced'}</span>
           <span className="text-sm text-muted-foreground">{formatTime(track.duration)} · {formatBytes(track.bytes)}</span>
         </div>
-        {working && (
+        {track.status === 'queued' && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {waitReason(w)}{w?.online && w.modelError && <span className="mt-0.5 block text-xs">{w.modelError} The song is kept and starts once the model is ready.</span>}
+          </p>
+        )}
+        {track.status === 'running' && (
           <div className="meter h-2" role="progressbar" aria-label="Preparation progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(track.progress * 100)}>
             <i style={{ width: `${Math.round(track.progress * 100)}%` }} />
           </div>
@@ -127,13 +192,13 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }
             </select>
           </div>
           <button
-            className="btn" disabled={working || busy === 'retry'}
-            onClick={() => run('retry', async () => { await prepareTrack(track.id, 'retry', quality); setPrepState({ ok: 'Preparation queued. Existing finished audio stays playable until the new version is ready.' }); }, setPrepState)}
+            className="btn" disabled={working || !!busy}
+            onClick={() => run('retry', async () => { await prepareTrack(track.id, 'retry', quality); ok(setPrepState, 'Preparation queued. Existing finished audio stays playable until the new version is ready.'); }, setPrepState)}
           >
             <RefreshCw size={14} /> {track.status === 'ready' ? 'Prepare again' : 'Retry preparation'}
           </button>
           {working && (
-            <button className="btn" disabled={busy === 'cancel'} onClick={() => run('cancel', async () => { await prepareTrack(track.id, 'cancel'); setPrepState({ ok: 'Cancel requested.' }); }, setPrepState)}>Cancel</button>
+            <button className="btn" disabled={!!busy} onClick={() => run('cancel', async () => { await prepareTrack(track.id, 'cancel'); ok(setPrepState, 'Cancel requested.'); }, setPrepState)}>Cancel preparation</button>
           )}
         </div>
         {prepState.ok && <p role="status" className="text-sm text-mint">{prepState.ok}</p>}
@@ -152,17 +217,24 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }
         {wordAlignmentEnabled && aligning && <p role="status" className="text-sm text-gold">{track.alignment?.status === 'queued' ? 'Word alignment queued. It starts when playback stops.' : `Aligning words to vocals… ${Math.round((track.alignment?.progress ?? 0) * 100)}%`}</p>}
         {wordAlignmentEnabled && track.alignment?.status === 'failed' && <ErrorNote>{track.alignment.error} Existing lyrics are kept.</ErrorNote>}
         <div className="flex flex-wrap gap-2">
-          {wordAlignmentEnabled && needsWords && <button className="btn btn-violet" disabled={aligning || track.status !== 'ready' || busy === 'align'} onClick={() => run('align', async () => { await alignTrackLyrics(track.id); setLyricState({ ok: 'Word alignment queued. You can keep using the library.' }); }, setLyricState)}>Generate word timings</button>}
-          {wordAlignmentEnabled && aligning && <button className="btn" disabled={busy === 'cancel-align'} onClick={() => run('cancel-align', async () => { await alignTrackLyrics(track.id, 'cancel'); setLyricState({ ok: 'Word alignment canceled.' }); }, setLyricState)}>Cancel word alignment</button>}
+          {wordAlignmentEnabled && needsWords && <button className="btn btn-violet" disabled={aligning || track.status !== 'ready' || !!busy} onClick={() => run('align', async () => { await alignTrackLyrics(track.id); ok(setLyricState, 'Word alignment queued. You can keep using the library.'); }, setLyricState)}>Generate word timings</button>}
+          {wordAlignmentEnabled && aligning && <button className="btn" disabled={!!busy} onClick={() => run('cancel-align', async () => { await alignTrackLyrics(track.id, 'cancel'); ok(setLyricState, 'Word alignment canceled.'); }, setLyricState)}>Cancel word alignment</button>}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            className="btn" disabled={busy === 'lookup'}
-            onClick={() => run('lookup', async () => { const r = await lookupLyric(track.id); setLyricState({ ok: r.lyrics.kind === 'missing' ? 'No lyrics found for these details.' : 'Lyrics matched automatically.' }); }, setLyricState)}
+            className="btn" disabled={!!busy}
+            onClick={() => run('lookup', async () => { const r = await lookupLyric(track.id); ok(setLyricState, r.lyrics.kind === 'missing' ? 'No lyrics found for these details.' : 'Lyrics matched automatically.'); }, setLyricState)}
           ><Search size={14} /> Match automatically</button>
           <button
-            className="btn" disabled={busy === 'matches'}
-            onClick={() => run('matches', async () => { const r = await lyricMatches(track.id); setMatches(r.matches); if (!r.matches.length) setLyricState({ err: 'No candidate lyrics were found. Check the title and artist, then search again.' }); else matchesRef.current?.focus(); }, setLyricState)}
+            className="btn" disabled={!!busy}
+            onClick={() => run('matches', async () => {
+              const r = await lyricMatches(track.id);
+              if (!alive.current) return;
+              // Focus once the list has rendered; on the first load it does not exist yet.
+              focusMatches.current = r.matches.length > 0;
+              setMatches(r.matches);
+              if (!r.matches.length) setLyricState({ err: 'No candidate lyrics were found. Check the title and artist, then search again.' });
+            }, setLyricState)}
           >Choose from matches</button>
         </div>
         {lyricState.ok && <p role="status" className="text-sm text-mint">{lyricState.ok}</p>}
@@ -185,8 +257,8 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }
                     </p>
                   </div>
                   <button
-                    className={`btn btn-sm ${selected ? '' : 'btn-violet'}`} disabled={busy === `m${m.id}`}
-                    onClick={() => run(`m${m.id}`, async () => { await selectLyric(track.id, m.id); setLyricState({ ok: 'Lyrics selected and saved for offline use.' }); }, setLyricState)}
+                    className={`btn btn-sm ${selected ? '' : 'btn-violet'}`} disabled={!!busy}
+                    onClick={() => run(`m${m.id}`, async () => { await selectLyric(track.id, m.id); ok(setLyricState, 'Lyrics selected and saved for offline use.'); }, setLyricState)}
                   >{selected ? <><Check size={14} /> In use</> : 'Use these'}</button>
                 </li>
               );
@@ -200,19 +272,14 @@ function TrackBody({ track, isActive, wordAlignmentEnabled, onClose, onChanged }
         {isActive ? (
           <p className="text-sm text-muted-foreground">This song is playing. End it before deleting.</p>
         ) : !confirmDelete ? (
-          <button className="btn btn-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete song</button>
+          <button ref={deleteRef} className="btn btn-danger" disabled={!!busy} onClick={() => setConfirmDelete(true)}><Trash2 size={14} /> Delete song</button>
         ) : (
-          <div className="space-y-2 rounded-lg border border-[#ff7a7a66] bg-[#3a1226] p-3" role="alertdialog" aria-label="Confirm delete">
-            <p className="text-sm">Delete “{track.title}” and its backing track, guide vocal, original file, and lyrics from this library? This cannot be undone.</p>
+          <div className="space-y-2 rounded-lg border border-[#ff7a7a66] bg-[#3a1226] p-3" role="alertdialog" aria-labelledby="td-del-title" aria-describedby="td-del-desc">
+            <p id="td-del-title" className="font-bold">Delete this song permanently?</p>
+            <p id="td-del-desc" className="text-sm">Delete “{track.title}” and its backing track, guide vocal, original file, and lyrics from this library? This cannot be undone.</p>
             <div className="flex gap-2">
-              <button className="btn" onClick={() => setConfirmDelete(false)}>Keep song</button>
-              <button
-                className="btn btn-danger" disabled={busy === 'del'}
-                onClick={async () => {
-                  setBusy('del'); setDeleteErr('');
-                  try { await deleteTrack(track.id); onChanged(); onClose(); } catch (e) { setDeleteErr(msg(e)); setBusy(null); }
-                }}
-              >Delete permanently</button>
+              <button ref={keepRef} className="btn" disabled={busy === 'del'} onClick={() => setConfirmDelete(false)}>Keep song</button>
+              <button className="btn btn-danger" disabled={!!busy && busy !== 'del'} aria-disabled={busy === 'del'} onClick={() => void del()}>{busy === 'del' ? 'Deleting…' : 'Delete permanently'}</button>
             </div>
             {deleteErr && <ErrorNote>{deleteErr}</ErrorNote>}
           </div>
