@@ -101,15 +101,16 @@ function SeekBar({ engine, playing, scrub, duration, disabled, timer, onScrub }:
   // Quarter-second steps keep the thumb moving smoothly without re-rendering the slider every frame.
   const pos = useTicker(playing, () => scrub ?? Math.round(engine.getPosition() * 4) / 4);
   return (
-    <>
+    // Phones get timers and seek bar on their own row so the transport buttons fit on the next one.
+    <div className="order-first flex basis-full items-center gap-2 sm:contents">
       <span className={`w-[3.4em] text-right font-mono tabular-nums ${timer}`} aria-hidden>{formatTime(pos)}</span>
       <Slider
-        className="order-first basis-full sm:order-none sm:basis-auto sm:flex-1" label="Seek position" value={Math.min(pos, duration || 1)} max={duration || 1} step={0.1}
+        className="flex-1" label="Seek position" value={Math.min(pos, duration || 1)} max={duration || 1} step={0.1}
         disabled={disabled} valueText={`${formatTime(pos)} of ${formatTime(duration)}`} color="#ffd465"
         onChange={onScrub} onCommit={(v) => { onScrub(null); engine.seek(v); }}
       />
       <span className={`w-[3.4em] font-mono tabular-nums text-white/70 ${timer}`} aria-hidden>{formatTime(duration)}</span>
-    </>
+    </div>
   );
 }
 
