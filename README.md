@@ -25,6 +25,65 @@ pnpm start
 
 Build and development mode should be run separately. Production serves bundled fonts and assets locally.
 
+## Docker deployment
+
+Install Docker with the Compose plugin, then run:
+
+```sh
+docker compose build
+docker compose run --rm --no-deps karaoke node scripts/install-model.mjs
+docker compose up -d
+```
+
+Open **http://localhost:3100** and create your admin password. The image includes Node.js, FFmpeg and the audio worker; no host Node.js or pnpm installation is needed. Model setup downloads and verifies the pinned model into the persistent `karaoke-data` volume. Run it once before the first startup. The server can start without a model, but song preparation requires it.
+
+The runtime image contains Next.js standalone output, bundled worker and installers, and only the current architecture's ONNX CPU binaries. Build tools stay in build stages, and optional CUDA downloads are skipped. FFmpeg is built from pinned, checksum-verified source with the app's audio formats and filters; video processing is omitted. The first image build compiles FFmpeg, and subsequent builds reuse that layer. The verified ARM64 image is approximately 480 MB, reduced from the initial 2.2 GB image.
+
+The volume holds songs, SQLite, passwords, sessions and models, and survives container updates and `docker compose down`. `docker compose down --volumes` deletes the library. Keep one app instance per data volume, and never run a host app against the same library while the container is running. The container runs as the `node` user (UID 1000); custom bind-mounted data folders must be writable by that user.
+
+```sh
+docker compose logs -f karaoke
+docker compose down
+# After pulling application changes:
+docker compose up -d --build
+```
+
+Set `KARAOKE_PORT=3200` in a Compose `.env` file to change the published host port. `KARAOKE_INFERENCE_THREADS` can also be set there (default `2`, range `1`–`64`). The host's `.env.local` and `data` folder are excluded from the image. Container configuration belongs in `compose.yaml` or a Compose override; data paths inside the container use `/data`.
+
+For folder import, add a read-only bind mount and its **container** path to a `compose.override.yaml` file:
+
+```yaml
+services:
+  karaoke:
+    environment:
+      KARAOKE_IMPORT_ROOTS: /music
+    volumes:
+      - /absolute/path/to/your/music:/music:ro
+```
+
+Restart with `docker compose up -d` after changing configuration. Allow at least 3 GiB of container memory for preparation and additional disk space for originals, stems and temporary audio. For browser microphones on other devices, put a trusted HTTPS reverse proxy in front of port 3100.
+
+Verified with Docker Desktop's Linux ARM64 runtime: image build, model download and graph loading, API and worker health, real CPU inference, exclusive library locking, crash recovery, and graceful shutdown with persistent data. Linux x86_64 containers have not yet been exercised.
+
+### Publishing to Docker Hub
+
+The workflows have separate entry points: **CI** (`ci.yml`) checks pushes to `main` or `master` and pull requests; **Docker Release** (`release.yml`) publishes on `v*.*.*` tags; **Docker Nightly** (`nightly.yml`) publishes scheduled or manually requested builds. Both publishing workflows reuse CI and the shared `publish-docker.yml` workflow. Publishing waits for the source checks and Docker smoke test, and builds for `linux/amd64` and `linux/arm64`. Configure these under the GitHub repository's **Settings → Secrets and variables → Actions**:
+
+- Variable `DOCKERHUB_USERNAME`: the Docker Hub account used to log in.
+- Variable `DOCKERHUB_IMAGE`: the complete image name, such as `your-account/karaokething` (an organization namespace can also be used).
+- Secret `DOCKERHUB_TOKEN`: a Docker Hub access token with write access to that repository.
+
+Create the Docker Hub repository before the first release. A tag such as `v1.2.3` publishes `your-account/karaokething:1.2.3`, `:v1.2.3`, and `:latest`. Prereleases such as `v1.2.3-rc.1` publish both version tags and leave `latest` unchanged. Builds use the optimized Dockerfile and cache intermediate layers in GitHub Actions.
+
+Every day at **03:17 UTC**, Docker Nightly checks and builds the default branch (`master`) and publishes `your-account/karaokething:nightly` for AMD64 and ARM64. Nightly publishing requires both CI jobs to pass and does not update `latest`. The schedule becomes active when the workflow is on the default branch.
+
+To publish a nightly manually, open **Actions → Docker Nightly → Run workflow**, select the branch to build, and run it. This uses the same checks and publishes only `nightly`. You can also trigger it with `gh workflow run nightly.yml --ref master`.
+
+```sh
+git tag v1.2.3
+git push origin v1.2.3
+```
+
 ## Use
 
 - Add MP3, WAV, FLAC, M4A, or OGG files through **Add songs**. Files must be nonempty, at most 250 MB, and at most 30 minutes long. Tags populate the title and artist where available; otherwise edit them in **Details**. Identical files are skipped.
@@ -61,7 +120,7 @@ Stop the app before copying the entire data folder, including the SQLite databas
 
 ## Verification and current limits
 
-GitHub Actions runs lint, type checking, tests, and a production build on pushes and pull requests. The workflow uses Node.js 24.12.0, the pnpm version pinned in `package.json`, and FFmpeg for the audio-ingestion tests. To run the same checks locally, use `pnpm run ci`.
+GitHub Actions runs lint, type checking, tests, and a production build on pushes and pull requests. The workflow uses Node.js 24.12.0, the pnpm version pinned in `package.json`, and FFmpeg for the audio-ingestion tests. To run these source checks locally, use `pnpm run ci`. A separate Docker job builds the shipped image and tests model installation, audio decoding, upload and preparation of all five formats, media ranges, and static assets using an isolated library.
 
 Type checking uses TypeScript 7.0.2. Next.js and ESLint use the TypeScript 6 compatibility package through the `typescript` alias, following Microsoft's [side-by-side setup](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-6-0). Node typings track the supported Node 24 runtime. ESLint 10 passes the checks, although some Next.js lint plugins still declare peer support only through ESLint 9. The workspace includes version-specific release-age exceptions for three explicitly upgraded packages published within pnpm's default one-day window.
 

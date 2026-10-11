@@ -1,0 +1,14 @@
+.git
+.next
+node_modules
+data
+certificates
+.env*
+!.env.example
+coverage
+build
+out
+*.tsbuildinfo
+*.log
+.DS_Store
+.t3

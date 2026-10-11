@@ -2,14 +2,19 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - master
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # The prefix avoids sharing a concurrency group with a calling workflow.
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')) }}
 
 jobs:
   checks:
@@ -36,3 +41,30 @@ jobs:
 
       - name: Run checks
         run: pnpm run ci
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build production image
+        run: docker compose build
+
+      - name: Install pinned audio model in test volume
+        run: docker compose run --rm --no-deps karaoke node scripts/install-model.mjs
+
+      - name: Start server and worker
+        run: docker compose up -d --wait --wait-timeout 90
+
+      - name: Test shipped image and supported audio formats
+        run: |
+          docker compose cp tests/docker-smoke.mjs karaoke:/tmp/docker-smoke.mjs
+          docker compose exec -T -e KARAOKE_DOCKER_SMOKE=1 karaoke node /tmp/docker-smoke.mjs
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose logs karaoke
+
+      - name: Remove test containers and volume
+        if: always()
+        run: docker compose down --volumes
