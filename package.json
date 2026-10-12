@@ -15,7 +15,8 @@
     "test": "pnpm --filter @karaokething/web run test",
     "ci": "pnpm --filter @karaokething/web run ci",
     "desktop": "pnpm --filter @karaokething/desktop run start",
-    "desktop:dist": "pnpm --filter @karaokething/desktop run dist"
+    "desktop:dist": "pnpm --filter @karaokething/desktop run dist",
+    "desktop:ci": "pnpm --filter @karaokething/desktop run ci"
   },
   "packageManager": "pnpm@12.10.1",
   "engines": {

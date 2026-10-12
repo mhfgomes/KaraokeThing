@@ -9,6 +9,9 @@
   "main": "main.mjs",
   "scripts": {
     "start": "electron .",
+    "check": "node --check main.mjs && node --check preload.cjs && node --check pages/setup.js && node --check pages/offline.js",
+    "pack": "electron-builder --dir --publish never",
+    "ci": "pnpm run check && pnpm run pack",
     "dist": "electron-builder",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
