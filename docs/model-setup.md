@@ -7,6 +7,7 @@ The Node worker uses a published SCNet ONNX model on CPU, with model-specific DS
 After installing the project's Node dependencies, run:
 
 ```sh
+cd apps/web
 npx tsx scripts/install-model.ts
 npx tsx scripts/install-model.ts --check
 ```
@@ -51,6 +52,7 @@ Disk usage is proportional to input duration: decoded input plus two raw stems c
 ## Verification and limits
 
 ```sh
+cd apps/web
 npx tsx --test src/worker/separation.test.ts
 KARAOKE_TEST_INFERENCE=1 npx tsx --test src/worker/separation.test.ts
 KARAOKE_TEST_INFERENCE=1 KARAOKE_TEST_QUALITY=high npx tsx --test src/worker/separation.test.ts

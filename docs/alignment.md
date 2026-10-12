@@ -9,6 +9,7 @@ This is an **English speech-model baseline**, not a validated singing aligner. C
 ## Install and check
 
 ```sh
+cd apps/web
 node --import tsx scripts/install-alignment-model.ts
 node --import tsx scripts/install-alignment-model.ts --check
 ```
@@ -82,6 +83,7 @@ Reducing rejection thresholds trades fewer rejected lines for more incorrect tim
 ## Verification and measured limits
 
 ```sh
+cd apps/web
 node --import tsx --test src/worker/alignment.test.ts
 KARAOKE_TEST_ALIGNMENT_INFERENCE=1 node --import tsx --test src/worker/alignment.test.ts
 pnpm exec tsc --ignoreConfig --noEmit --strict --skipLibCheck --types node --target es2022 --module esnext --moduleResolution bundler src/worker/alignment.ts src/worker/alignment.test.ts scripts/install-alignment-model.ts

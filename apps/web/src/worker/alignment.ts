@@ -33,7 +33,7 @@ export const ALIGNMENT_VOCAB: Readonly<Record<string, number>> = {
 const RATE = 16000, STRIDE = 320, RECEPTIVE = 400, VOCAB_SIZE = 32;
 const MAX_SECONDS = 24, MAX_LABELS = 512, CHUNK_SECONDS = 8, CONTEXT_SAMPLES = 10240;
 export function alignmentModelDirectory() {
-  return path.resolve(process.env.KARAOKE_DATA_DIR || 'data', 'models', 'alignment');
+  return path.resolve(process.env.KARAOKE_DATA_DIR || '../../data', 'models', 'alignment');
 }
 export async function alignmentSha256(file: string, signal?: AbortSignal) {
   signal?.throwIfAborted();

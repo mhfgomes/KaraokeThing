@@ -14,7 +14,7 @@ const subscribeMotion = (cb: () => void) => {
   mq.addEventListener('change', cb);
   return () => mq.removeEventListener('change', cb);
 };
-const useReducedMotion = () =>
+export const useReducedMotion = () =>
   useSyncExternalStore(subscribeMotion, () => window.matchMedia('(prefers-reduced-motion: reduce)').matches, () => false);
 
 const subscribeFs = (cb: () => void) => {
@@ -61,7 +61,7 @@ function WordLine({ line, clock, playing, reduced }: { line: LyricLine; clock: (
   );
 }
 
-function Lyrics({ lines, wordMode, clock, playing, reduced, ended }: {
+export function Lyrics({ lines, wordMode, clock, playing, reduced, ended }: {
   lines: LyricLine[]; wordMode: boolean; clock: () => number; playing: boolean; reduced: boolean; ended: boolean;
 }) {
   const idx = useTicker(playing, () => currentLyricIndex(lines, clock()));

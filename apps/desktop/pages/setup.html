@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <title>KaraokeThing Stage</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main>
+    <h1>Connect to your host</h1>
+    <p>On the host computer, sign in to KaraokeThing, open <b>Stage</b> in the side panel and copy the stage link. Paste it here.</p>
+    <form id="form">
+      <input id="link" type="url" placeholder="http://192.168.1.20:3100/stage#key=…" aria-label="Stage link" autofocus required spellcheck="false">
+      <button id="save">Connect</button>
+    </form>
+    <div id="error" class="error" role="alert" hidden></div>
+    <p class="hint">Everything else is set from the host’s admin panel. Shortcuts: <kbd>F11</kbd> full screen, <kbd>Ctrl/⌘ Shift D</kbd> next display, <kbd>Ctrl/⌘ Shift L</kbd> this screen.</p>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

@@ -14,7 +14,7 @@ export const SCNET = {
 };
 const RATE = 44100;
 const SEGMENT = 485100;
-export function modelDirectory() { return path.join(path.resolve(process.env.KARAOKE_DATA_DIR || 'data'), 'models'); }
+export function modelDirectory() { return path.join(path.resolve(process.env.KARAOKE_DATA_DIR || '../../data'), 'models'); }
 export async function sha256File(file: string) {
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(file)) hash.update(chunk);

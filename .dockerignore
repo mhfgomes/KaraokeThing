@@ -1,6 +1,6 @@
 .git
-.next
-node_modules
+**/.next
+**/node_modules
 data
 certificates
 .env*
@@ -8,7 +8,8 @@ certificates
 coverage
 build
 out
-*.tsbuildinfo
+**/*.tsbuildinfo
 *.log
 .DS_Store
 .t3
+apps/desktop/dist

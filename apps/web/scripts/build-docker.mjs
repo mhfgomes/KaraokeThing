@@ -4,7 +4,8 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const output = '.next/standalone';
+// In the monorepo, Next nests the traced server under apps/web; keep the worker and tools beside it.
+const output = '.next/standalone/apps/web';
 
 // Next traces the web server. Bundle the separate worker and CLI tools as well,
 // leaving only ONNX's native addon external to the JavaScript bundles.
@@ -60,5 +61,5 @@ for (const platform of await readdir(nativeRoot)) {
 
 await mkdir(path.join(output, 'licenses'), { recursive: true });
 await cp('node_modules/@audio/neural-separate/NOTICE', path.join(output, 'licenses/neural-separate-NOTICE'));
-await cp('LICENSE', path.join(output, 'LICENSE'));
+await cp('../../LICENSE', path.join(output, 'LICENSE'));
 await rm(path.join(output, '.next/cache'), { recursive: true, force: true });

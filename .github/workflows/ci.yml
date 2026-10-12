@@ -37,7 +37,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter @karaokething/web
 
       - name: Run checks
         run: pnpm run ci
@@ -58,7 +58,7 @@ jobs:
 
       - name: Test shipped image and supported audio formats
         run: |
-          docker compose cp tests/docker-smoke.mjs karaoke:/tmp/docker-smoke.mjs
+          docker compose cp apps/web/tests/docker-smoke.mjs karaoke:/tmp/docker-smoke.mjs
           docker compose exec -T -e KARAOKE_DOCKER_SMOKE=1 karaoke node /tmp/docker-smoke.mjs
 
       - name: Show container logs on failure
