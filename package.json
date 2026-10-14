@@ -4,7 +4,8 @@
   "license": "MIT",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @karaokething/web run dev",
+    "dev": "pnpm --parallel --filter @karaokething/web --filter @karaokething/desktop run dev",
+    "dev:web": "pnpm --filter @karaokething/web run dev",
     "build": "pnpm --filter @karaokething/web run build",
     "start": "pnpm --filter @karaokething/web run start",
     "worker": "pnpm --filter @karaokething/web run worker",

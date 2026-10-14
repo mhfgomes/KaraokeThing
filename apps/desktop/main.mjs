@@ -18,18 +18,24 @@ function parseLink(raw) {
   const key = new URLSearchParams(url.hash.slice(1)).get('key');
   return key ? { origin: url.origin, key } : null;
 }
-function readConfig() {
-  try { return parseLink(JSON.parse(readFileSync(configFile, 'utf8')).link); } catch { return null; }
+const linkUrl = (link) => `${link.origin}/stage#key=${encodeURIComponent(link.key)}`;
+function readFile() {
+  try { return JSON.parse(readFileSync(configFile, 'utf8')); } catch { return {}; }
 }
-function writeConfig(link) {
+/** `connect` marks a link the user just confirmed, used once by the restart that follows. */
+function writeConfig(link, connect = false) {
   mkdirSync(path.dirname(configFile), { recursive: true });
-  writeFileSync(configFile, JSON.stringify({ link: `${link.origin}/stage#key=${encodeURIComponent(link.key)}` }, null, 2));
+  writeFileSync(configFile, JSON.stringify({ link: linkUrl(link), connect }, null, 2));
 }
 
-// `--stage-url=<link>` pairs from the command line, e.g. for an unattended TV computer.
+// Never connect to a host on our own: each launch asks for the link first, offering the last one.
+// `--stage-url=<link>` counts as asking, e.g. for an unattended TV computer.
+const saved = readFile();
+const savedLink = parseLink(saved.link);
 const cliLink = parseLink(process.argv.find((a) => a.startsWith('--stage-url='))?.slice('--stage-url='.length));
 if (cliLink) writeConfig(cliLink);
-const config = readConfig();
+else if (saved.connect && savedLink) writeConfig(savedLink);
+const config = cliLink ?? (saved.connect ? savedLink : null);
 
 // Play as soon as the host presses Start; nobody is at this screen to click.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -42,12 +48,11 @@ if (!app.requestSingleInstanceLock()) app.quit();
 let win = null;
 let retry = null;
 
-const stageUrl = () => `${config.origin}/stage#key=${encodeURIComponent(config.key)}`;
 
 function showStage() {
   clearTimeout(retry);
   if (!config) { void win.loadFile(page('setup.html')); return; }
-  void win.loadURL(stageUrl()).catch(() => undefined);
+  void win.loadURL(linkUrl(config)).catch(() => undefined);
 }
 
 function createWindow() {
@@ -107,7 +112,10 @@ function buildMenu() {
 
 const fromSetupPage = (event) => event.senderFrame?.url.startsWith('file:');
 
-ipcMain.handle('stage:current', (event) => (fromSetupPage(event) && config ? stageUrl() : ''));
+ipcMain.handle('stage:current', (event) => {
+  const link = config ?? savedLink;
+  return fromSetupPage(event) && link ? linkUrl(link) : '';
+});
 ipcMain.handle('stage:save', async (event, raw) => {
   if (!fromSetupPage(event)) return { error: 'Not allowed.' };
   const link = parseLink(raw);
@@ -118,7 +126,7 @@ ipcMain.handle('stage:save', async (event, raw) => {
   } catch (e) {
     return { error: `Can’t reach ${link.origin}. Check the host is running and this computer is on the same network. (${e instanceof Error ? e.message : e})` };
   }
-  writeConfig(link);
+  writeConfig(link, true);
   // The microphone permission switch is read at startup, so restart with the new host.
   app.relaunch();
   app.exit(0);

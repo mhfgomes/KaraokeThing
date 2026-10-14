@@ -22,7 +22,7 @@ pnpm model:install
 pnpm dev
 ```
 
-Open **http://localhost:3100** on the host computer. Create your local admin password on the first visit. Other visitors have read-only access unless they sign in. Both the web server and the preparation worker start with this command; stop them with Ctrl+C.
+Open **http://localhost:3100** on the host computer. Create your local admin password on the first visit. Other visitors have read-only access unless they sign in. Both the web server and the preparation worker start with this command; stop them with Ctrl+C. The stage app also opens in a separate window; to start only the web app, run `pnpm dev:web`.
 
 The model installer downloads a pinned, checksum-verified SCNet model of approximately 13 MB, with its license and provenance. Internet access is needed for this initial download and lyric lookup. The model is already installed in this development checkout's ignored `data` directory. See [model setup](docs/model-setup.md) for details and manual installation.
 
@@ -50,6 +50,8 @@ pnpm install
 pnpm desktop                    # or: pnpm desktop --stage-url="http://host:3100/stage#key=…"
 pnpm desktop:dist               # installers for the current OS in apps/desktop/dist
 ```
+
+The app asks for the host link every time it starts, with the last link filled in; press **Connect** to use it. Pass `--stage-url` to connect without asking, for example on an unattended TV computer.
 
 Shortcuts: F11 (Ctrl+Cmd+F on macOS) toggles full screen, Ctrl/Cmd+Shift+D moves to the next display, Ctrl/Cmd+Shift+L changes the host link. **Make a new link** in the Stage tab unpairs every display. A stage display uses the same playback lease as a browser, so only one of them plays a song at a time.
 
