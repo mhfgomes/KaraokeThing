@@ -63,6 +63,13 @@
             "x64",
             "arm64"
           ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     },
@@ -81,12 +88,22 @@
             "x64",
             "arm64"
           ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "category": "AudioVideo",
       "maintainer": "Mário Gomes <mhfgomes@users.noreply.github.com>"
     },
-    "artifactName": "KaraokeThing-Stage-${version}-${os}-${arch}.${ext}"
+    "artifactName": "KaraokeThing-Stage-${version}-${os}-${arch}.${ext}",
+    "portable": {
+      "artifactName": "KaraokeThing-Stage-${version}-${os}-${arch}-portable.${ext}"
+    }
   },
   "author": {
     "name": "Mário Gomes",

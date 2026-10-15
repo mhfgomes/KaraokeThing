@@ -43,7 +43,7 @@ The stage display is the main screen: it shows only the lyrics and plays the sou
 2. On the computer connected to the TV and speakers, run the KaraokeThing Stage app and paste the link. You can also open the link in a browser, but browsers need one click before they play sound and only allow microphones over HTTPS.
 3. In the admin panel, set **Play songs on** to **Stage display**. Starting a song from the library or queue now plays it on the display. Play, pause, seek, lyric timing and the mixer (including the display computer's microphones) all control the display.
 
-Download the installer for your computer from the [latest release](https://github.com/mhfgomes/KaraokeThing/releases/latest): `.dmg` for macOS, `.exe` for Windows, `.AppImage` or `.deb` for Linux. The builds are not code-signed yet, so macOS and Windows warn on first launch (on macOS, right-click the app and choose **Open**).
+Download the app from the [latest release](https://github.com/mhfgomes/KaraokeThing/releases/latest). The installers are the `.dmg` (macOS), `.exe` (Windows) and `.deb` (Linux); the portable versions run without installing: `.zip` (macOS), `-portable.exe` (Windows), `.AppImage` or `.tar.gz` (Linux). The builds are not code-signed yet, so macOS and Windows warn on first launch (on macOS, right-click the app and choose **Open**).
 
 The app lives in `apps/desktop`. From the repository root:
 
