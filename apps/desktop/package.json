@@ -1,7 +1,7 @@
 {
   "name": "@karaokething/desktop",
   "productName": "KaraokeThing Stage",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Full-screen stage display for KaraokeThing: lyrics on the screen, sound through the speakers. Controlled from the host's admin panel.",
   "license": "MIT",
   "private": true,
