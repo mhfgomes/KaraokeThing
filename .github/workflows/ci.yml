@@ -71,6 +71,10 @@ jobs:
       - name: Check and package the stage app
         run: pnpm run desktop:ci
 
+      - name: Check Linux AppImage packaging
+        if: runner.os == 'Linux'
+        run: pnpm --filter @karaokething/desktop exec electron-builder --linux AppImage --x64 --publish never
+
   docker:
     runs-on: ubuntu-latest
     steps:
