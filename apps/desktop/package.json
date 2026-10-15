@@ -24,6 +24,7 @@
   },
   "build": {
     "appId": "app.karaokething.stage",
+    "executableName": "karaokething-stage",
     "productName": "KaraokeThing Stage",
     "files": [
       "main.mjs",

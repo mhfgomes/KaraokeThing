@@ -2,6 +2,12 @@ name: Publish Desktop App
 
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to build and publish desktop installers for
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -28,7 +34,15 @@ jobs:
       # Builds are unsigned for now: skip code-signing identity lookup on macOS.
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
+      - name: Validate release tag
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: '[[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]'
+
       - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
 
       - uses: actions/setup-node@v7
         with:
@@ -48,7 +62,10 @@ jobs:
       - name: Build installers
         shell: bash
         working-directory: apps/desktop
-        run: pnpm exec electron-builder ${{ matrix.target }} --publish never -c.extraMetadata.version="${GITHUB_REF_NAME#v}"
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        # Keep the override here as well so retries can repair tags predating the package config fix.
+        run: pnpm exec electron-builder ${{ matrix.target }} --publish never -c.executableName=karaokething-stage -c.extraMetadata.version="${TAG#v}"
 
       - name: Upload installers
         uses: actions/upload-artifact@v7
@@ -84,7 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ inputs.tag || github.ref_name }}
         working-directory: ${{ runner.temp }}/installers
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
