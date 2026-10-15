@@ -11,6 +11,7 @@ import { HttpError, requireAdmin, requireSameOrigin, isAdmin, passwordHash, pass
 import { ingestFile, importFolder, importRoots, MAX_FILE_BYTES } from './ingest';
 import { lookupLyrics, searchLyrics, selectLyrics } from './lyrics';
 import { queueAlignment, cancelAlignment, wordAlignmentEnabled } from './alignment-jobs';
+import { STAGE_CONTROLLER, LEASE_MS, adminStageState, requireStageKey, stageAction, stageActionSchema, stageReport } from './stage';
 
 const qualitySchema = z.enum(['balanced', 'high']).default('balanced');
 const json = (value: unknown, status = 200, headers?: HeadersInit) => Response.json(value, { status, headers: { 'Cache-Control': 'no-store', ...headers } });
@@ -24,6 +25,8 @@ function activeSession() {
   if (!encoded) return null;
   try {
     const active = JSON.parse(encoded) as { trackId: string; controller: string; expiresAt: number; owner: string };
+    // The stage display holds its lease without a browser session; its reports keep it alive.
+    if (active?.owner === STAGE_CONTROLLER) return active.expiresAt > Date.now() ? active : null;
     const session = active?.owner && db.prepare('SELECT expires FROM sessions WHERE hash=?').get(active.owner) as { expires: number } | undefined;
     return active?.expiresAt > Date.now() && session && session.expires > Date.now() ? active : null;
   } catch { return null; }
@@ -109,7 +112,7 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
   try {
     const route = segments.join('/');
     const method = request.method;
-    const methods = route === 'state' ? ['GET'] : ['auth', 'upload', 'import', 'session'].includes(route) ? ['POST'] : route === 'queue' ? ['POST', 'PATCH', 'DELETE'] : segments[0] === 'media' && segments.length === 3 ? ['GET', 'HEAD'] : segments[0] === 'tracks' && segments.length === 2 ? ['GET', 'PATCH', 'DELETE'] : segments[0] === 'tracks' && segments.length === 3 ? segments[2] === 'lyrics' ? ['GET', 'POST'] : ['prepare', 'alignment'].includes(segments[2]) ? ['POST'] : null : null;
+    const methods = route === 'state' ? ['GET'] : ['auth', 'upload', 'import', 'session', 'stage/report'].includes(route) ? ['POST'] : route === 'stage' ? ['GET', 'POST'] : route === 'queue' ? ['POST', 'PATCH', 'DELETE'] : segments[0] === 'media' && segments.length === 3 ? ['GET', 'HEAD'] : segments[0] === 'tracks' && segments.length === 2 ? ['GET', 'PATCH', 'DELETE'] : segments[0] === 'tracks' && segments.length === 3 ? segments[2] === 'lyrics' ? ['GET', 'POST'] : ['prepare', 'alignment'].includes(segments[2]) ? ['POST'] : null : null;
     if (methods && !methods.includes(method)) return json({ error: 'Method not allowed.' }, 405, { Allow: methods.join(', ') });
     if (!['GET', 'HEAD'].includes(method)) requireSameOrigin(request);
     if (route === 'state' && method === 'GET') {
@@ -159,7 +162,15 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
       }
       return json({ ok: true }, 200, { 'Set-Cookie': createSession(request) });
     }
+    if (route === 'stage/report' && method === 'POST') {
+      requireStageKey(request);
+      return json(stageReport(await body(request)));
+    }
     requireAdmin(request);
+    if (route === 'stage') {
+      if (method === 'POST') stageAction(stageActionSchema.parse(await body(request)));
+      return json(adminStageState());
+    }
     if (route === 'upload' && method === 'POST') return await upload(request);
     if (route === 'import' && method === 'POST') {
       const input = z.object({ path: z.string().min(1).max(4096), quality: qualitySchema }).parse(await body(request));
@@ -240,10 +251,10 @@ export async function handleApi(request: Request, segments: string[]): Promise<R
         if (input.action === 'release') { setSetting('active_session', 'null'); return; }
         if (input.action === 'claim') {
           if (!input.trackId || getTrack(input.trackId)?.status !== 'ready') throw new HttpError(400, 'Choose a prepared song.');
-          setSetting('active_session', JSON.stringify({ trackId: input.trackId, controller: input.controller, expiresAt: Date.now() + 30000, owner }));
+          setSetting('active_session', JSON.stringify({ trackId: input.trackId, controller: input.controller, expiresAt: Date.now() + LEASE_MS, owner }));
         } else {
           if (!current) throw new HttpError(409, 'Playback session expired. Start the song again.');
-          setSetting('active_session', JSON.stringify({ ...current, expiresAt: Date.now() + 30000 }));
+          setSetting('active_session', JSON.stringify({ ...current, expiresAt: Date.now() + LEASE_MS }));
         }
       });
       return json({ ok: true });

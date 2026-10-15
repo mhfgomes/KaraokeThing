@@ -5,7 +5,8 @@ import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import type { Track, Lyrics, QueueEntry } from '../lib/types';
 
-export const DATA_DIR = path.resolve(/* turbopackIgnore: true */ process.env.KARAOKE_DATA_DIR || 'data');
+// Without KARAOKE_DATA_DIR, scripts run from apps/web and share the repository's data folder.
+export const DATA_DIR = path.resolve(/* turbopackIgnore: true */ process.env.KARAOKE_DATA_DIR || '../../data');
 for (const dir of ['', 'tracks', 'temporary', 'models', 'lyrics']) mkdirSync(path.join(/* turbopackIgnore: true */ DATA_DIR, dir), { recursive: true });
 const globalDb = globalThis as typeof globalThis & { karaokeDb?: DatabaseSync };
 export const db = globalDb.karaokeDb ??= new DatabaseSync(path.join(DATA_DIR, 'library.sqlite'));

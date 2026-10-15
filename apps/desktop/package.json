@@ -1,0 +1,59 @@
+{
+  "name": "@karaokething/desktop",
+  "productName": "KaraokeThing Stage",
+  "version": "0.1.0",
+  "description": "Full-screen stage display for KaraokeThing: lyrics on the screen, sound through the speakers. Controlled from the host's admin panel.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron .",
+    "check": "node --check main.mjs && node --check preload.cjs && node --check pages/setup.js && node --check pages/offline.js",
+    "pack": "electron-builder --dir --publish never",
+    "ci": "pnpm run check && pnpm run pack",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "app.karaokething.stage",
+    "productName": "KaraokeThing Stage",
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "pages/**"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "KaraokeThing Stage plays singers' microphones through the speakers when the host turns them on."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo"
+    }
+  }
+}

@@ -1,4 +1,9 @@
+packages:
+  - apps/*
+
 allowBuilds:
+  electron: true
+  electron-winstaller: false
   esbuild: true
   onnxruntime-node: true
   sharp: false

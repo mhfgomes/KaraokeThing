@@ -34,12 +34,15 @@ RUN curl -fsSL https://ffmpeg.org/releases/ffmpeg-8.1.3.tar.xz -o source.tar.xz 
 FROM base AS dependencies
 RUN npm install --global pnpm@12.10.1
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/web/package.json apps/web/
+COPY apps/desktop/package.json apps/desktop/
+# Only the web app: the Electron stage app is never installed in the image.
 # Both inference engines use CPU. Avoid ONNX's optional CUDA download on x64.
-RUN ONNXRUNTIME_NODE_INSTALL=skip pnpm install --frozen-lockfile
+RUN ONNXRUNTIME_NODE_INSTALL=skip pnpm install --frozen-lockfile --filter @karaokething/web
 
 FROM dependencies AS build
 COPY . .
-RUN pnpm build:docker
+RUN pnpm --filter @karaokething/web run build:docker
 
 FROM base AS runtime
 ENV NODE_ENV=production \
@@ -50,11 +53,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates libgomp1 libmp3lame0 libopus0 util-linux \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=ffmpeg /opt/ffmpeg/bin/ /usr/local/bin/
-COPY --from=ffmpeg /opt/ffmpeg/licenses/ ./licenses/ffmpeg/
-COPY --from=build --chown=node:node /app/.next/standalone ./
-COPY --from=build /app/.next/static ./.next/static
-COPY --from=build /app/public ./public
-COPY docker/start.sh ./docker/start.sh
+COPY --from=ffmpeg /opt/ffmpeg/licenses/ ./apps/web/licenses/ffmpeg/
+# Next traces the monorepo, so the server sits in apps/web with shared modules at /app.
+COPY --from=build --chown=node:node /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build /app/apps/web/public ./apps/web/public
+COPY docker/start.sh ./apps/web/docker/start.sh
+WORKDIR /app/apps/web
 RUN mkdir /data && chown node:node /data
 USER node
 EXPOSE 3100

@@ -1,4 +1,4 @@
-import type { AppState, Lyrics, LyricMatch } from '@/lib/types';
+import type { AppState, Lyrics, LyricMatch, StageAdminState, StageDesired, StageMicConfig } from '@/lib/types';
 
 export class ApiError extends Error {
   status: number;
@@ -74,6 +74,15 @@ export const queueRemove = (id: string) => api<{ ok: true }>('/api/queue', { met
 
 export const session = (action: 'claim' | 'heartbeat' | 'release', controller: string, trackId?: string) =>
   api<{ ok: true }>('/api/session', { method: 'POST', json: { action, controller, trackId } });
+
+export type StageMix = Partial<Omit<StageDesired, 'trackId' | 'singer' | 'transportRev' | 'playing' | 'position' | 'mics'>> & { mics?: [Partial<StageMicConfig>, Partial<StageMicConfig>] };
+export type StageCommand =
+  | { action: 'load'; trackId: string; singer?: string; entryId?: string }
+  | { action: 'play' | 'pause' | 'stop' | 'rotateKey' }
+  | { action: 'seek'; position: number }
+  | { action: 'mix'; mix: StageMix };
+export const fetchStage = (signal?: AbortSignal) => api<StageAdminState>('/api/stage', { signal });
+export const stageCommand = (command: StageCommand) => api<StageAdminState>('/api/stage', { method: 'POST', json: command });
 
 /** Best-effort release while the page is closing. */
 export function releaseOnExit(controller: string) {

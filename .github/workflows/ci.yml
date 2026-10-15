@@ -37,10 +37,39 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y ffmpeg
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --filter @karaokething/web
 
       - name: Run checks
         run: pnpm run ci
+
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      # Unsigned test build: skip code-signing identity lookup on macOS.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+          package-manager-cache: false
+
+      - uses: pnpm/setup@v3
+        with:
+          version: 12.10.1
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @karaokething/desktop
+
+      - name: Check and package the stage app
+        run: pnpm run desktop:ci
 
   docker:
     runs-on: ubuntu-latest
@@ -58,7 +87,7 @@ jobs:
 
       - name: Test shipped image and supported audio formats
         run: |
-          docker compose cp tests/docker-smoke.mjs karaoke:/tmp/docker-smoke.mjs
+          docker compose cp apps/web/tests/docker-smoke.mjs karaoke:/tmp/docker-smoke.mjs
           docker compose exec -T -e KARAOKE_DOCKER_SMOKE=1 karaoke node /tmp/docker-smoke.mjs
 
       - name: Show container logs on failure

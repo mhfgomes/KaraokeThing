@@ -8,7 +8,8 @@ const mode = process.argv.includes('--production') ? 'start' : 'dev';
 const standalone = process.argv.includes('--standalone');
 if (standalone && mode !== 'start') throw new Error('Standalone output requires production mode.');
 const cwd = fileURLToPath(new URL('../', import.meta.url));
-const dataDir = path.resolve(process.env.KARAOKE_DATA_DIR || path.join(cwd, 'data'));
+// Library data lives at the repository root (next to apps/), or beside the standalone server.
+const dataDir = path.resolve(process.env.KARAOKE_DATA_DIR || path.join(cwd, standalone ? 'data' : '../../data'));
 await mkdir(dataDir, { recursive: true });
 const lock = path.join(dataDir, 'app.lock');
 try {

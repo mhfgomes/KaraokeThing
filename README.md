@@ -2,6 +2,16 @@
 
 A private karaoke app for solo practice and parties on your home network. The host uploads songs, prepares backing and guide-vocal tracks locally, and manages a singer queue. Prepared audio and cached lyrics work without an internet connection while the host computer is running.
 
+## Repository layout
+
+This is a pnpm monorepo. Run every command from the repository root; scripts there forward to the right app.
+
+- `apps/web`: the Next.js server, admin panel, stage page and preparation worker (`@karaokething/web`).
+- `apps/desktop`: the Electron stage display app (`@karaokething/desktop`).
+- `data/` (ignored), `.env.local`, `Dockerfile`, `compose.yaml` and `docs/` stay at the root.
+
+Use `pnpm --filter @karaokething/web run <script>` for scripts the root doesn't forward. The Docker image and CI install only the web app, so they never download Electron.
+
 ## Start
 
 Install **Node.js 24.12 or newer**, **pnpm**, and **FFmpeg**. `node --version`, `pnpm --version`, and `ffmpeg -version` should work in your terminal. The application is TypeScript throughout; Python is not required. ONNX Runtime and FFmpeg are native dependencies.
@@ -12,7 +22,7 @@ pnpm model:install
 pnpm dev
 ```
 
-Open **http://localhost:3100** on the host computer. Create your local admin password on the first visit. Other visitors have read-only access unless they sign in. Both the web server and the preparation worker start with this command; stop them with Ctrl+C.
+Open **http://localhost:3100** on the host computer. Create your local admin password on the first visit. Other visitors have read-only access unless they sign in. Both the web server and the preparation worker start with this command; stop them with Ctrl+C. The stage app also opens in a separate window; to start only the web app, run `pnpm dev:web`.
 
 The model installer downloads a pinned, checksum-verified SCNet model of approximately 13 MB, with its license and provenance. Internet access is needed for this initial download and lyric lookup. The model is already installed in this development checkout's ignored `data` directory. See [model setup](docs/model-setup.md) for details and manual installation.
 
@@ -24,6 +34,26 @@ pnpm start
 ```
 
 Build and development mode should be run separately. Production serves bundled fonts and assets locally.
+
+## Stage display (desktop app)
+
+The stage display is the main screen: it shows only the lyrics and plays the sound (backing, guide vocal and microphones). Everything is controlled from the host's admin panel.
+
+1. On the host, sign in and open **Stage** in the side panel. Copy the stage link.
+2. On the computer connected to the TV and speakers, run the KaraokeThing Stage app and paste the link. You can also open the link in a browser, but browsers need one click before they play sound and only allow microphones over HTTPS.
+3. In the admin panel, set **Play songs on** to **Stage display**. Starting a song from the library or queue now plays it on the display. Play, pause, seek, lyric timing and the mixer (including the display computer's microphones) all control the display.
+
+The app lives in `apps/desktop`. From the repository root:
+
+```sh
+pnpm install
+pnpm desktop                    # or: pnpm desktop --stage-url="http://host:3100/stage#key=…"
+pnpm desktop:dist               # installers for the current OS in apps/desktop/dist
+```
+
+The app asks for the host link every time it starts, with the last link filled in; press **Connect** to use it. Pass `--stage-url` to connect without asking, for example on an unattended TV computer.
+
+Shortcuts: F11 (Ctrl+Cmd+F on macOS) toggles full screen, Ctrl/Cmd+Shift+D moves to the next display, Ctrl/Cmd+Shift+L changes the host link. **Make a new link** in the Stage tab unpairs every display. A stage display uses the same playback lease as a browser, so only one of them plays a song at a time.
 
 ## Docker deployment
 
@@ -133,7 +163,7 @@ pnpm test
 Actual model inference is an opt-in test:
 
 ```sh
-KARAOKE_TEST_INFERENCE=1 pnpm exec tsx --test src/worker/separation.test.ts
+KARAOKE_TEST_INFERENCE=1 pnpm --filter @karaokething/web exec tsx --test src/worker/separation.test.ts
 ```
 
 On PowerShell set `$env:KARAOKE_TEST_INFERENCE='1'` first, then run the command without its inline assignment.

@@ -7,13 +7,14 @@ import {
   api, ApiError, authAction, fetchState, isLeaseLost, newControllerId, patchTrack, queueRemove, queueReorder, releaseOnExit, session,
 } from '@/lib/client-api';
 import { TrackCache } from '@/lib/track-cache';
-import type { AppState, QueueEntry, Track } from '@/lib/types';
+import { STAGE_CONTROLLER, type AppState, type QueueEntry, type Track } from '@/lib/types';
 import { AdminPanel } from './admin-panel';
 import { LoginForm, SetupScreen } from './auth';
 import { LibraryPanel } from './library-panel';
 import { Mixer } from './mixer';
 import { QueuePanel } from './queue-panel';
 import { Stage } from './stage';
+import { OutputToggle, RemoteMixer, RemoteStage, StagePanel, stagePosition, useStageRemote } from './stage-remote';
 import { AddToQueueDialog, TrackDialog } from './track-dialogs';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ErrorNote, Modal } from './ui-bits';
@@ -71,7 +72,8 @@ export function KaraokeApp() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [view, setView] = useState<View>('stage');
-  const [leftTab, setLeftTab] = useState<'songs' | 'add'>('songs');
+  const [leftTab, setLeftTab] = useState<'songs' | 'add' | 'stage'>('songs');
+  const [outputChoice, setOutputChoice] = useState<'browser' | 'display' | null>(null);
   const [mixerOpen, setMixerOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
 
@@ -179,6 +181,10 @@ export function KaraokeApp() {
   }, [dq, favoritesOnly, page, engine, tracks, dropControl]);
 
   const refresh = useCallback(() => refreshRef.current(), []);
+  const remote = useStageRemote(!!state?.admin);
+  // Until the host picks, songs go to the stage display whenever one is connected.
+  const output = outputChoice ?? (remote.stage?.connected ? 'display' : 'browser');
+  const stageTrackId = remote.stage?.desired.trackId ?? null;
 
   // Songs on the stage or in the queue may be off the visible library page; keep them fresh in the background.
   const queue = localQueue ?? state?.queue ?? [];
@@ -188,9 +194,9 @@ export function KaraokeApp() {
     const want = new Map<string, number>();
     for (const e of localQueue ?? state.queue) want.set(e.trackId, QUEUED_TRACK_MAX_AGE_MS);
     if (editId) want.set(editId, QUEUED_TRACK_MAX_AGE_MS);
-    for (const id of [now?.trackId, state.active?.trackId]) if (id) want.set(id, POLL_MS);
+    for (const id of [now?.trackId, state.active?.trackId, stageTrackId]) if (id) want.set(id, POLL_MS);
     tracks.sync([...want].map(([id, maxAgeMs]) => ({ id, maxAgeMs: onPage.has(id) ? Infinity : maxAgeMs })));
-  }, [state, localQueue, now, editId, tracks]);
+  }, [state, localQueue, now, editId, tracks, stageTrackId]);
 
   const trackFor = (id: string) => state?.tracks.find((t) => t.id === id) ?? tracks.get(id);
 
@@ -249,9 +255,12 @@ export function KaraokeApp() {
   // ---- playback actions ---------------------------------------------------
   const admin = !!state?.admin;
   const active = state?.active ?? null;
-  const lockedByOther = !!active && active.controller !== (typeof window === 'undefined' ? '' : controllerId()) && active.expiresAt > fetchedAt;
-  const startBlockReason = starting || snap.transport === 'loading' ? 'A song is loading.'
-    : lockedByOther ? 'Another browser is controlling playback.' : null;
+  const mine = typeof window === 'undefined' ? '' : controllerId();
+  const stageHasLease = active?.controller === STAGE_CONTROLLER;
+  // The display may take over from this browser's own song or its own previous one, but not another browser's.
+  const lockedByOther = !!active && active.expiresAt > fetchedAt && (output === 'display' ? !stageHasLease && active.controller !== mine : active.controller !== mine);
+  const startBlockReason = output === 'browser' && (starting || snap.transport === 'loading') ? 'A song is loading.'
+    : lockedByOther ? stageHasLease ? 'The stage display is playing a song. Stop it there, or switch to the stage display.' : 'Another browser is controlling playback.' : null;
 
   const endSong = useCallback(async () => {
     cancelStart();
@@ -265,6 +274,14 @@ export function KaraokeApp() {
   }, [engine, refresh, cancelStart]);
 
   const startTrack = async (track: Track, entry?: QueueEntry) => {
+    if (output === 'display') {
+      if (lockedByOther) return;
+      setPlayError('');
+      setView('stage');
+      if (now) await endSong();
+      if (await remote.send({ action: 'load', trackId: track.id, entryId: entry?.id, singer: entry?.singer })) void refresh();
+      return;
+    }
     engine.unlock();
     if (startBusy.current || engine.getSnapshot().transport === 'loading' || lockedByOther) return;
     startBusy.current = true;
@@ -330,13 +347,20 @@ export function KaraokeApp() {
   // keyboard shortcuts for the host
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (!admin || !now || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!admin || (output === 'browser' ? !now : !stageTrackId) || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = e.target as HTMLElement | null;
       if (e.defaultPrevented || (el && (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || el.isContentEditable))) return;
       // Buttons and links keep Space/Enter; arrows still seek after a click, except in widgets that use them.
       if ((e.key === ' ' || e.key === 'Enter') && el?.closest('button, a, [role="button"]')) return;
       if (e.key.startsWith('Arrow') && el?.closest('[role="tab"], [role="slider"], [role="listbox"], [role="menu"], [role="radiogroup"]')) return;
       if (document.querySelector('[role="dialog"]')) return;
+      if (output === 'display') {
+        if (!stageTrackId) return;
+        const r = remote.stage?.report;
+        if (e.key === ' ' || e.key === 'k') { e.preventDefault(); void remote.send({ action: r?.transport === 'playing' ? 'pause' : 'play' }); }
+        else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') void remote.send({ action: 'seek', position: Math.max(0, stagePosition(remote) + (e.key === 'ArrowRight' ? 5 : -5)) });
+        return;
+      }
       if (e.key === ' ' || e.key === 'k') { e.preventDefault(); void onPlayPause(); }
       else if (e.key === 'ArrowRight') engine.seek(engine.getPosition() + 5);
       else if (e.key === 'ArrowLeft') engine.seek(engine.getPosition() - 5);
@@ -384,16 +408,15 @@ export function KaraokeApp() {
     saveOffset(p.id, p.value);
   }, [saveOffset]);
 
-  const onOffset = (value: number) => {
-    if (!now) return;
-    const id = now.trackId;
+  const onOffset = (value: number, id = now?.trackId) => {
+    if (!id) return;
     if (pendingOffset.current) clearTimeout(pendingOffset.current.timer);
     setOffsetDraft({ id, value });
     pendingOffset.current = { id, value, timer: setTimeout(flushOffset, 600) };
   };
   // Save a pending offset right away when the song changes or the app unmounts.
   const nowTrackId = now?.trackId;
-  useEffect(() => flushOffset, [nowTrackId, flushOffset]);
+  useEffect(() => flushOffset, [nowTrackId, stageTrackId, flushOffset]);
 
   const signOut = async () => {
     signingOut.current = true;
@@ -426,7 +449,9 @@ export function KaraokeApp() {
   const firstTrack = first ? trackFor(first.trackId) : undefined;
   const nextUp = first ? `${first.singer}${firstTrack ? `, ${firstTrack.title}` : ''}` : null;
   const libraryEmpty = state.total === 0 && !dq.trim() && !favoritesOnly;
-  const offset = nowTrack ? (offsetDraft?.id === nowTrack.id ? offsetDraft.value : nowTrack.lyricOffset) : 0;
+  const offsetFor = (t: Track | null | undefined) => (t ? (offsetDraft?.id === t.id ? offsetDraft.value : t.lyricOffset) : 0);
+  const offset = offsetFor(nowTrack);
+  const stageTrack = stageTrackId ? trackFor(stageTrackId) ?? null : null;
   const singers = Array.from(new Set(queue.map((e) => e.singer)));
   // The mixer tab only exists for the host; fall back to the stage once host access is gone.
   const shown: View = !admin && view === 'mixer' ? 'stage' : view;
@@ -478,7 +503,7 @@ export function KaraokeApp() {
     <LibraryPanel
       tracks={state.tracks} total={state.total} page={page} pageSize={PAGE_SIZE}
       q={q} onQ={(v) => { setQ(v); setPage(1); }} favoritesOnly={favoritesOnly} onFavoritesOnly={(v) => { setFavoritesOnly(v); setPage(1); }}
-      onPage={setPage} admin={admin} loaded playingId={now?.trackId ?? active?.trackId ?? null}
+      onPage={setPage} admin={admin} loaded playingId={now?.trackId ?? stageTrackId ?? active?.trackId ?? null}
       playDisabledReason={startBlockReason} onPlay={(t) => void startTrack(t)} onQueue={setQueueTrack}
       onEdit={(t) => setEditId(t.id)} onFavorite={(t) => void toggleFavorite(t)} onGoAdd={() => setLeftTab('add')}
     />
@@ -529,33 +554,45 @@ export function KaraokeApp() {
       <main className="grid min-h-0 flex-1 gap-3 p-3 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:pb-3 xl:grid-cols-[21rem_minmax(0,1fr)_20rem] xl:grid-rows-[minmax(0,1fr)]">
         <aside aria-label="Library" className={`${shown === 'library' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:col-start-2 lg:row-start-1 lg:flex xl:col-start-1`}>
           {admin ? (
-            <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as 'songs' | 'add')} className="min-h-0 flex-1 gap-3">
-              <TabsList aria-label="Library sections" className="grid w-full grid-cols-2 gap-1 rounded-xl bg-black/30 p-1 group-data-horizontal/tabs:h-auto">
-                {(['songs', 'add'] as const).map((t) => (
-                  <TabsTrigger key={t} value={t} className="min-h-8 rounded-lg font-bold text-white/75 pointer-coarse:min-h-10 dark:data-active:border-transparent dark:data-active:bg-violet dark:data-active:text-white">{t === 'songs' ? 'Songs' : 'Add songs'}</TabsTrigger>
+            <Tabs value={leftTab} onValueChange={(v) => setLeftTab(v as 'songs' | 'add' | 'stage')} className="min-h-0 flex-1 gap-3">
+              <TabsList aria-label="Library sections" className="grid w-full grid-cols-3 gap-1 rounded-xl bg-black/30 p-1 group-data-horizontal/tabs:h-auto">
+                {(['songs', 'add', 'stage'] as const).map((t) => (
+                  <TabsTrigger key={t} value={t} className="min-h-8 rounded-lg font-bold text-white/75 pointer-coarse:min-h-10 dark:data-active:border-transparent dark:data-active:bg-violet dark:data-active:text-white">{t === 'songs' ? 'Songs' : t === 'add' ? 'Add songs' : 'Stage'}</TabsTrigger>
                 ))}
               </TabsList>
               <TabsContent value="songs" className="flex min-h-0 flex-col">{library}</TabsContent>
               {/* keepMounted so uploads keep their progress across tab switches. */}
               <TabsContent value="add" keepMounted className="flex min-h-0 flex-col"><AdminPanel state={state} onChanged={() => void refresh()} /></TabsContent>
+              <TabsContent value="stage" className="flex min-h-0 flex-col"><StagePanel remote={remote} /></TabsContent>
             </Tabs>
           ) : library}
         </aside>
 
         <div className={`${shown === 'stage' || shown === 'mixer' ? 'flex' : 'hidden'} min-h-0 min-w-0 flex-col gap-3 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:flex xl:col-start-2 xl:row-span-1`}>
+          {admin && (
+            <OutputToggle
+              output={output} connected={!!remote.stage?.connected}
+              onOutput={(o) => { setOutputChoice(o); if (o === 'display' && now) void endSong(); }}
+            />
+          )}
           <div className={`${shown === 'stage' ? 'flex' : 'hidden'} min-h-0 flex-1 flex-col lg:flex`}>
-            <Stage
+            {admin && output === 'display' ? (
+              <RemoteStage
+                remote={remote} track={stageTrack} offset={offsetFor(stageTrack)} onOffset={(v) => onOffset(v, stageTrackId ?? undefined)}
+                nextUp={nextUp} idle={idle} notice={playError ? <ErrorNote>{playError}</ErrorNote> : undefined}
+              />
+            ) : <Stage
               engine={engine} snap={snap} track={nowTrack} singer={now?.singer ?? null} nextUp={nextUp}
               canControl={admin && !!now} offset={offset} onOffset={onOffset} onPlayPause={() => void onPlayPause()} onStop={() => void endSong()}
               notice={notice} idle={idle}
-            />
+            />}
           </div>
           {admin && (
             <div className={`${shown === 'mixer' ? 'block' : 'hidden'} min-h-0 lg:block`}>
               <button className="btn btn-sm mb-2 hidden lg:inline-flex" aria-expanded={mixerOpen} onClick={() => setMixerOpen((v) => !v)}>
                 <SlidersHorizontal size={14} /> {mixerOpen ? 'Hide mixer' : 'Show mixer'}
               </button>
-              <div className={`scroll-thin lg:max-h-[42dvh] lg:overflow-y-auto ${mixerOpen ? '' : 'lg:hidden'}`}><Mixer engine={engine} snap={snap} /></div>
+              <div className={`scroll-thin lg:max-h-[42dvh] lg:overflow-y-auto ${mixerOpen ? '' : 'lg:hidden'}`}>{output === 'display' ? <RemoteMixer remote={remote} /> : <Mixer engine={engine} snap={snap} />}</div>
             </div>
           )}
         </div>
