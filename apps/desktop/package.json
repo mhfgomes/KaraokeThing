@@ -36,8 +36,20 @@
     "mac": {
       "category": "public.app-category.music",
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "extendInfo": {
         "NSMicrophoneUsageDescription": "KaraokeThing Stage plays singers' microphones through the speakers when the host turns them on."
@@ -45,15 +57,40 @@
     },
     "win": {
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     },
     "linux": {
       "target": [
-        "AppImage",
-        "deb"
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ],
-      "category": "AudioVideo"
-    }
-  }
+      "category": "AudioVideo",
+      "maintainer": "Mário Gomes <mhfgomes@users.noreply.github.com>"
+    },
+    "artifactName": "KaraokeThing-Stage-${version}-${os}-${arch}.${ext}"
+  },
+  "author": {
+    "name": "Mário Gomes",
+    "email": "mhfgomes@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/mhfgomes/KaraokeThing"
 }

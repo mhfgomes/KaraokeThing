@@ -1,0 +1,90 @@
+name: Publish Desktop App
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }} installers
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-24.04
+            target: --linux
+          - name: Windows
+            os: windows-latest
+            target: --win
+          - name: macOS
+            os: macos-latest
+            target: --mac
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      # Builds are unsigned for now: skip code-signing identity lookup on macOS.
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.12.0
+          package-manager-cache: false
+
+      - uses: pnpm/setup@v3
+        with:
+          version: 12.10.1
+          cache: true
+          install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter @karaokething/desktop
+
+      # The tag (v1.2.3) sets the app version, so package.json never needs a release bump.
+      - name: Build installers
+        shell: bash
+        working-directory: apps/desktop
+        run: pnpm exec electron-builder ${{ matrix.target }} --publish never -c.extraMetadata.version="${GITHUB_REF_NAME#v}"
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v7
+        with:
+          name: desktop-${{ matrix.name }}
+          path: |
+            apps/desktop/dist/*.dmg
+            apps/desktop/dist/*.zip
+            apps/desktop/dist/*.exe
+            apps/desktop/dist/*.AppImage
+            apps/desktop/dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Attach installers to the GitHub release
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/installers
+          pattern: desktop-*
+          merge-multiple: true
+
+      # Creates the release for the tag if it doesn't exist yet, then (re)uploads every installer.
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        working-directory: ${{ runner.temp }}/installers
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          gh release upload "$TAG" ./* --clobber

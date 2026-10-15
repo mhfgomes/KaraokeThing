@@ -1,4 +1,4 @@
-name: Docker Release
+name: Release
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: docker-release-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -21,3 +21,9 @@ jobs:
     uses: ./.github/workflows/publish-docker.yml
     secrets:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  desktop:
+    needs: checks
+    uses: ./.github/workflows/release-desktop.yml
+    permissions:
+      contents: write
