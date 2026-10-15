@@ -2,6 +2,8 @@
 
 A private karaoke app for solo practice and parties on your home network. The host uploads songs, prepares backing and guide-vocal tracks locally, and manages a singer queue. Prepared audio and cached lyrics work without an internet connection while the host computer is running.
 
+See the [v0.2.0 release notes](CHANGELOG.md#v020) for desktop stage support and upgrade instructions.
+
 ## Repository layout
 
 This is a pnpm monorepo. Run every command from the repository root; scripts there forward to the right app.
