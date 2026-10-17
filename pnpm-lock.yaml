@@ -199,8 +199,8 @@ importers:
         specifier: ^0.4.0
         version: 0.4.0
       lucide-react:
-        specifier: ^1.55.0
-        version: 1.55.0(@types/react@19.3.0)(react@19.3.0)
+        specifier: ^1.57.0
+        version: 1.57.0(@types/react@19.3.0)(react@19.3.0)
       music-metadata:
         specifier: ^12.1.0
         version: 12.1.0(supports-color@7.2.0)
@@ -3103,8 +3103,8 @@ packages:
     resolution: {integrity: sha512-Jo6dJ04CmSjuznwJSS3pUeWmd/H0ffTlkXXgwZi+eq1UCmqQwCh+eLsYOYCwY991i2Fah4h1BEMCx4qThGbsiA==}
     engines: {node: '>=10'}
 
-  lucide-react@1.55.0:
-    resolution: {integrity: sha512-bSozQHiI3/8q7JvgoqVRGOYUi7fYT3siAZwmZsljjsOH2Husp/2ODdFf/leD+ZC/2yKfn7r8oh6yeoR3ITR5vA==}
+  lucide-react@1.57.0:
+    resolution: {integrity: sha512-bXFZEucYhAzLD62Jse76AbTR6LiSLTn3Tqir2f1n8rZrWAdLodYy7jnRZSPIT89dRLk/IseMOUWG82wJtTyTTw==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -6779,7 +6779,7 @@ snapshots:
       es6-error: 4.1.1
       matcher: 3.0.0
       roarr: 2.15.4
-      semver: 7.8.5
+      semver: 7.7.4
       serialize-error: 7.0.1
     optional: true
 
@@ -7258,7 +7258,7 @@ snapshots:
     dependencies:
       yallist: 4.0.0
 
-  lucide-react@1.55.0(@types/react@19.3.0)(react@19.3.0):
+  lucide-react@1.57.0(@types/react@19.3.0)(react@19.3.0):
     dependencies:
       react: 19.3.0
     optionalDependencies:
@@ -7400,11 +7400,11 @@ snapshots:
 
   node-abi@4.37.0:
     dependencies:
-      semver: 7.8.5
+      semver: 7.7.4
 
   node-api-version@0.2.1:
     dependencies:
-      semver: 7.8.5
+      semver: 7.7.4
 
   node-exports-info@1.6.2:
     dependencies:
@@ -7420,7 +7420,7 @@ snapshots:
       graceful-fs: 4.2.11
       nopt: 9.0.0
       proc-log: 6.1.0
-      semver: 7.8.5
+      semver: 7.7.4
       tar: 7.5.22
       tinyglobby: 0.2.17
       undici: 6.29.0
